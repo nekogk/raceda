@@ -90,7 +90,7 @@ function checkMissingStations() {
 
   if (missing.size !== 0) {
     for (const [id, data] of missing) {
-      //console.warn(`역 정보 없음: ${id} (${[...new Set(data)].join(", ")})`);
+      console.warn(`역 정보 없음: ${id} (${[...new Set(data)].join(", ")})`);
     }
   }
 
@@ -108,11 +108,11 @@ function segmentCost(line, service, prev, next) {
     const loop = lines[line].loop;
     
     if (Number.isNaN(distance)) {
-        //console.warn(`거리 정보 없음: ${line} ${service} ${prev} → ${next}`);
+        console.warn(`거리 정보 없음: ${line} ${service} ${prev} → ${next}`);
         return moveCost;
     }
     if (distance <= 0) {
-        //console.warn(`거리가 음수임: ${line} ${service} ${prev} → ${next}`);
+        console.warn(`거리가 음수임: ${line} ${service} ${prev} → ${next}`);
         return moveCost;
     }
 
@@ -436,8 +436,9 @@ function setupMap(svg) {
     // ── 레이어 나누기 ──
     // map.svg의 레이어: background, line, transfer, station, etc, legend, text
     // 레이어마다 흐리는 방법이 다르다.
-    //   background, legend       → 통째로 흐리게
-    //   line, transfer, station  → 경로를 따라 그은 띠만 남기고 흐리게 (routed로 묶어 마스크 하나를 씌운다)
+    //   legend                   → 통째로 흐리게
+    //   background               → 위에 덮는 흰 안개(fog)로 흐리게. 경로 띠 아래는 bgFog로 따로 흐린다
+    //   line, transfer, station  → 경로를 따라 그은 띠에만 구멍이 난 흰 안개(fog)를 위에 덮어서 흐리게
     //   text                     → 경로에 있는 역의 이름 상자만 남기고 흐리게
     //   etc                      → 선 조각은 routed의 맨 위로, 이름 뒤의 흰 사각형은 text의 맨 아래로 보낸다
     const layer = (id) => svg.querySelector(`:scope > #${id}`) ?? document.createElementNS(NS, "g");
@@ -650,7 +651,7 @@ function setupMap(svg) {
         if (drag?.moved) return;
         const id = nearestStation(toMapPoint(e));
         if (id === null) {
-            if (routed.hasAttribute("mask")) {
+            if (fog.style.display !== "none") {   // 경로가 떠 있으면
                 highlightRoute(null);
                 markStation("departure", null);
                 markStation("destination", null);
@@ -689,10 +690,12 @@ function setupMap(svg) {
 
 
     // ── 경로만 남기고 흐리게 ──
-    // 마스크는 밝기로 정한다: 흰색으로 칠한 곳은 그대로 보이고, 회색으로 칠한 곳은 흐려진다.
+    // 그림 자체에는 손대지 않고, 그 위에 반투명한 흰 사각형(안개)을 덮어서 흐리게 한다.
+    // 흰 바탕 위에서는 "불투명도 DIM으로 그리기"와 "흰색을 1 - DIM만큼 덮기"가 똑같아 보인다.
+    // (여러 요소를 묶은 그룹에 mask를 씌우면 Safari는 요소마다 따로 흐려서, 역 점이나 환승 표시 뒤의 선이 비쳐 보인다.
+    //  안개는 사각형 하나라서 어느 브라우저에서도 똑같이 그려진다.)
+    // 안개의 모양은 마스크로 정한다: 흰색으로 칠한 곳에는 안개가 끼고, 검은색으로 칠한 곳은 맑다.
     // 나중에 칠한 것이 먼저 칠한 것을 덮으므로, 칠하는 순서가 곧 그림의 위아래 순서가 된다.
-    const level = Math.round(DIM * 255);
-    const GRAY = `rgb(${level}, ${level}, ${level})`;
 
     function makeMask(id) {
         const mask = document.createElementNS(NS, "mask");
@@ -727,7 +730,7 @@ function setupMap(svg) {
     const makeCover = (element) => {
         const cover = element.cloneNode(false);
         cover.removeAttribute("class");
-        return setStroke(cover, GRAY, ROUTE_WIDTH);
+        return setStroke(cover, "white", ROUTE_WIDTH);
     };
     const lineGroups = [...lineLayer.children].map((group) => {
         const bodies = [...group.querySelectorAll("path, line, circle, polyline")].filter(isBody);
@@ -795,7 +798,22 @@ function setupMap(svg) {
         return best;
     }
 
-    const routeMask = makeMask("route-mask");
+    // fog: line·transfer·station 위에 덮는 안개 (경로 띠만 맑다)
+    // bgFog: background 위, 노선 아래에 덮는 안개 (경로 띠에만 낀다). 띠 밖의 background는 fog가 흐린다.
+    const fogMask = makeMask("fog-mask");
+    const bgFogMask = makeMask("bg-fog-mask");
+    const makeFog = (maskId) => {
+        const fog = makeRect(mapX, mapY, mapW, mapH, "white");
+        fog.setAttribute("fill-opacity", 1 - DIM);
+        fog.setAttribute("mask", `url(#${maskId})`);
+        fog.style.pointerEvents = "none";
+        fog.style.display = "none";
+        return fog;
+    };
+    const fog = makeFog("fog-mask");
+    const bgFog = makeFog("bg-fog-mask");
+    routed.after(fog);
+    routed.before(bgFog);
 
     // 종점: 한 노선에서 어떤 계통의 처음이나 마지막에 오고, 어느 계통에서도 중간에 오지 않는 역
     // (급행이 중간역에서 출발하거나 끝나는 경우는 종점이 아니다. 순환선은 종점이 없다)
@@ -811,9 +829,9 @@ function setupMap(svg) {
 
     highlightRoute = (path) => {
         if (path === null) {
-            routed.removeAttribute("mask");
+            fog.style.display = bgFog.style.display = "none";
             for (const label of labels) label.element.style.opacity = "";
-            background.style.opacity = legend.style.opacity = "";
+            legend.style.opacity = "";
             return;
         }
 
@@ -832,24 +850,30 @@ function setupMap(svg) {
             if (!rides.has(line)) rides.set(line, []);
             rides.get(line).push(points);
         }
-        const strokesOf = (line) => rides.get(line).map((points) => makeStroke(pathOf(points), "white", ROUTE_WIDTH));
+        // 경로 띠와 역 모양: fog에는 검은색(맑게), bgFog에는 흰색(안개)으로 같은 모양을 칠한다
+        const clear = [];
+        const addClear = (d, width) => {
+            clear.push([d, width]);
+            return makeStroke(d, "black", width);
+        };
+        const strokesOf = (line) => rides.get(line).map((points) => addClear(pathOf(points), ROUTE_WIDTH));
 
-        // line·transfer·station: 전체를 회색으로 깔고, 아래에 있는 노선부터 차례로 칠한다.
-        //   모든 노선  → 회색 덮개 (ROUTE_WIDTH)
-        //   타는 노선  → 그 위에 경로 구간을 흰색 띠로 (ROUTE_WIDTH)
-        // 이렇게 하면 경로보다 위에 그려진 다른 노선은 띠 위에 회색으로 남아서, 겹치는 곳에서 경로를 덮은 채로 흐려진다.
-        routeMask.replaceChildren(makeRect(mapX, mapY, mapW, mapH, GRAY));
+        // fog: 전체를 흰색(안개)으로 깔고, 아래에 있는 노선부터 차례로 칠한다.
+        //   모든 노선  → 흰색 덮개 (ROUTE_WIDTH)
+        //   타는 노선  → 그 위에 경로 구간을 검은색 띠로 (ROUTE_WIDTH)
+        // 이렇게 하면 경로보다 위에 그려진 다른 노선은 띠 위에 안개로 남아서, 겹치는 곳에서 경로를 덮은 채로 흐려진다.
+        fogMask.replaceChildren(makeRect(mapX, mapY, mapW, mapH, "white"));
         lineGroups.forEach((group, i) => {
-            routeMask.append(...group.covers);
-            for (const line of rides.keys()) if (groupOf[line] === i) routeMask.append(...strokesOf(line));
+            fogMask.append(...group.covers);
+            for (const line of rides.keys()) if (groupOf[line] === i) fogMask.append(...strokesOf(line));
         });
-        for (const line of rides.keys()) if (groupOf[line] < 0) routeMask.append(...strokesOf(line));
+        for (const line of rides.keys()) if (groupOf[line] < 0) fogMask.append(...strokesOf(line));
 
         // 다리 조각: 같은 색 노선의 경로가 그 자리를 지나가면 그대로 두고, 아니면 회색으로 덮는다
         for (const bridge of bridgeCovers) {
             const used = [...rides].some(([line, list]) =>
                 toRgb(lines[line].color) === bridge.color && list.some((points) => distanceTo(points, bridge.middle) < 3));
-            if (!used) routeMask.append(bridge.cover);
+            if (!used) fogMask.append(bridge.cover);
         }
 
         // 경로가 서거나 통과하는 환승역(승강장이 둘 이상인 역)은 환승 표시 전체를 남기고,
@@ -857,15 +881,18 @@ function setupMap(svg) {
         for (const station of passedStations) {
             const count = platformsOf.get(station)?.length ?? 0;
             if (count > 1) {
-                routeMask.append(makeStroke(stationShape(station), "white", STATION_WIDTH));
+                fogMask.append(addClear(stationShape(station), STATION_WIDTH));
             } else if (count === 1 && terminals.has(station)) {
-                routeMask.append(makeStroke(stationShape(station), "white", TERMINAL_WIDTH));
+                fogMask.append(addClear(stationShape(station), TERMINAL_WIDTH));
             }
         }
-        routed.setAttribute("mask", "url(#route-mask)");
 
-        // background·legend: 통째로 흐리게
-        background.style.opacity = legend.style.opacity = DIM;
+        // bgFog: 맑게 남긴 모양 그대로, 그 아래의 background만 흐린다
+        bgFogMask.replaceChildren(...clear.map(([d, width]) => makeStroke(d, "white", width)));
+        fog.style.display = bgFog.style.display = "";
+
+        // legend: 통째로 흐리게
+        legend.style.opacity = DIM;
 
         // text: 경로에 있는 역의 이름 상자 안에 있는 이름만 남기고 흐리게
         const boxes = path.map(([station]) => stations[station]?.box).filter(Boolean);
