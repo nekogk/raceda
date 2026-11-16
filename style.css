@@ -1,3 +1,50 @@
+@font-face {
+  font-family: 'sansRm';
+  src: url('/fonts/RusimezSans.otf') format('opentype');
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'sansRm';
+  src: url('/fonts/RusimezSansBold.otf') format('opentype');
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: 'sansLa';
+  font-weight: 400;
+  src: url(/fonts/Pretendard-Regular.otf) format('opentype');
+}
+
+@font-face {
+  font-family: 'sansLa';
+  font-weight: 700;
+  src: url(/fonts/Pretendard-Bold.otf) format('opentype');
+}
+
+@font-face {
+  font-family: 'sansSc';
+  font-weight: 400;
+  src: url(/fonts/NotoSansSC-Regular.ttf) format('truetype');
+  unicode-range: U+3400-4DBF, U+4E00-9FFF;
+}
+
+@font-face {
+  font-family: 'sansSc';
+  font-weight: 700;
+  src: url(/fonts/NotoSansSC-Bold.ttf) format('truetype');
+  unicode-range: U+3400-4DBF, U+4E00-9FFF;
+}
+
+@font-face {
+  font-family: 'HanWangKanTan';
+  src: url(/fonts/HanWangKanTan.ttf) format('truetype');
+}
+
+:root {
+  --sans-font: 'sansRm', 'sansLa', 'sansSc', sans-serif;
+}
+
 html,
 body {
     height: 100%;
@@ -17,7 +64,8 @@ body {
     border: 1px solid #dddddd;
     font-size: 1rem;
     line-height: 1rem;
-    font-family: 'rusimez sans', 'Pretendard', 'Microsoft YaHei', sans-serif;
+    font-family: var(--sans-font);
+    color: #000000;
 }
 
 #panel input {
@@ -65,7 +113,7 @@ button:hover { background-color: #eeeeee; }
     font-size: 1rem;
     line-height: 1.5rem;
     margin: 1rem 0;
-    font-family: 'rusimez sans', 'Pretendard', 'Microsoft YaHei', sans-serif;
+    font-family: var(--sans-font);
 }
 
 .suggest {
@@ -82,7 +130,7 @@ button:hover { background-color: #eeeeee; }
     border-top: none;
     font-size: 1rem;
     line-height: 1rem;
-    font-family: 'rusimez sans', 'Pretendard', 'Microsoft YaHei', sans-serif;
+    font-family: var(--sans-font);
 }
 
 .suggest li {
@@ -190,9 +238,6 @@ button:hover { background-color: #eeeeee; }
     line-height: 2rem;
 }
 
-
-/* ───────── 메인 페이지 ───────── */
-/* 도시 카드가 늘어나면 가로로 늘어놓고, 넘치면 다음 줄로 */
 body.home {
     flex-wrap: wrap;
     justify-content: center;
@@ -203,7 +248,6 @@ body.home {
     box-sizing: border-box;
 }
 
-/* 노선도의 일부만 잘라서 보여 주는 카드: 2560 크기의 노선도에서 緑山 Sluqecu역(1815, 1790) 주변 360×360 */
 .city {
     position: relative;
     display: block;
@@ -229,7 +273,7 @@ body.home {
     justify-content: center;
     align-items: center;
     color: #ffffff;
-    font-family: 'rusimez sans', 'Pretendard', 'Microsoft YaHei', sans-serif;
+    font-family: var(--sans-font);
     font-size: 1.5rem;
     font-weight: 700;
     letter-spacing: 0.15em;
@@ -243,13 +287,11 @@ body.home {
 .city:hover .city-name,
 .city:focus-visible .city-name { opacity: 1; }
 
-/* 마우스가 없는 기기(터치)는 호버가 없으니 처음부터 글자를 보여 준다 */
 @media (hover: none) {
     .city-map { filter: brightness(0.45); }
     .city-name { opacity: 1; }
 }
 
-/* ───────── 모바일: 지도를 화면 전체에, 패널은 아래에서 끌어올린다 ───────── */
 .handle { display: none; }
 
 @media (max-width: 768px) {
