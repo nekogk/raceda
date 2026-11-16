@@ -1,0 +1,302 @@
+html,
+body {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    display: flex;
+}
+
+#panel input,
+#panel button {
+    box-sizing: border-box;
+    height: 1.5rem;
+    margin: 0;
+    border-radius: 0;
+    border: 1px solid #dddddd;
+    font-size: 1rem;
+    line-height: 1rem;
+    font-family: 'rusimez sans', 'Pretendard', 'Microsoft YaHei', sans-serif;
+}
+
+#panel input {
+    width: 18rem;
+    margin-bottom: 0.5rem;
+    margin-right: 3rem;
+    padding: 0.25rem;
+}
+
+#panel button {
+    width: 6rem;
+    background-color: #ffffff;
+    margin-right: 0.5rem;
+}
+
+button:hover { background-color: #eeeeee; }
+
+#map {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+#map svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+#panel {
+    flex: none;
+    position: relative;
+    width: 24rem;
+    box-sizing: border-box;
+    padding: 1rem;
+    overflow: auto;
+    border-left: 1px solid #dddddd;
+}
+
+#panel .result {
+    white-space: pre-wrap;
+    font-size: 1rem;
+    line-height: 1.5rem;
+    margin: 1rem 0;
+    font-family: 'rusimez sans', 'Pretendard', 'Microsoft YaHei', sans-serif;
+}
+
+.suggest {
+    position: absolute;
+    z-index: 1;
+    box-sizing: border-box;
+    max-height: 18rem;
+    margin: 0;
+    padding: 0;
+    overflow: auto;
+    list-style: none;
+    background-color: #ffffff;
+    border: 1px solid #dddddd;
+    border-top: none;
+    font-size: 1rem;
+    line-height: 1rem;
+    font-family: 'rusimez sans', 'Pretendard', 'Microsoft YaHei', sans-serif;
+}
+
+.suggest li {
+    height: 1rem;
+    padding: 0.25rem;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.suggest li:hover,
+.suggest li.active { background-color: #eeeeee; }
+
+.suggest li.empty {
+    height: 1rem;
+    color: #999999;
+    cursor: default;
+}
+
+#panel .station-row,
+#panel .line-row { white-space: nowrap; }
+
+.station-mark {
+    fill: none;
+    stroke-width: 15;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.station-mark.departure { stroke: red; }
+.station-mark.destination { stroke: blue; }
+
+.station-row {
+    display: flex;
+    align-items: center;
+    height: 2rem;
+    line-height: 2rem;
+}
+
+.line-box {
+    display: flex;
+    align-items: center;
+}
+
+.hy-icon {
+    text-align: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 25%;
+    line-height: 1.5rem;
+    margin: 0.25rem;
+    outline: 2px solid;
+    outline-offset: -2px;
+    color: #000000;
+}
+
+.sl-icon {
+    text-align: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    line-height: 1.5rem;
+    margin: 0.25rem;
+    outline: 2px solid;
+    outline-offset: -2px;
+    font-family: 'HanWangKanTan';
+    font-weight: 400;
+}
+
+.sq-icon,
+.sm-icon,
+.kr1-icon,
+.kr2-icon,
+.kr3-icon {
+    text-align: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    line-height: 1.5rem;
+    margin: 0.25rem;
+    color: #ffffff;
+}
+
+
+.kr1-icon { font-size: 0.75rem; }
+.kr2-icon { font-size: 0.5rem; }
+
+.kr3-icon {
+    height: 1rem;
+    padding: 0.25rem 0;
+    font-size: 0.5rem;
+    line-height: 0.5rem;
+}
+
+.line-row {
+    display: flex;
+    align-items: center;
+    height: 2rem;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    font-weight: 700;
+    line-height: 2rem;
+}
+
+
+/* ───────── 메인 페이지 ───────── */
+/* 도시 카드가 늘어나면 가로로 늘어놓고, 넘치면 다음 줄로 */
+body.home {
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    align-content: center;
+    gap: 1rem;
+    padding: 1rem;
+    box-sizing: border-box;
+}
+
+/* 노선도의 일부만 잘라서 보여 주는 카드: 2560 크기의 노선도에서 緑山 Sluqecu역(1815, 1790) 주변 360×360 */
+.city {
+    position: relative;
+    display: block;
+    width: 12rem;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border: 1px solid #dddddd;
+}
+
+.city-map {
+    position: absolute;
+    max-width: none;
+    width: calc(100% * 2560 / 360);
+    left: calc(-100% * 1635 / 360);
+    top: calc(-100% * 1610 / 360);
+    transition: filter 0.3s;
+}
+
+.city-name {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #ffffff;
+    font-family: 'rusimez sans', 'Pretendard', 'Microsoft YaHei', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.city:hover .city-map,
+.city:focus-visible .city-map { filter: brightness(0.45); }
+
+.city:hover .city-name,
+.city:focus-visible .city-name { opacity: 1; }
+
+/* 마우스가 없는 기기(터치)는 호버가 없으니 처음부터 글자를 보여 준다 */
+@media (hover: none) {
+    .city-map { filter: brightness(0.45); }
+    .city-name { opacity: 1; }
+}
+
+/* ───────── 모바일: 지도를 화면 전체에, 패널은 아래에서 끌어올린다 ───────── */
+.handle { display: none; }
+
+@media (max-width: 768px) {
+    body:not(.home) { display: block; overflow: hidden; }
+
+    #map {
+        position: fixed;
+        inset: 0;
+    }
+
+    #panel {
+        position: fixed;
+        z-index: 2;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: auto;
+        height: 85vh;
+        height: 85dvh;
+        padding-top: 0;
+        border-left: none;
+        border-top: 1px solid #dddddd;
+        background-color: #ffffff;
+        transform: translateY(calc(100% - 9rem));
+        transition: transform 0.25s ease;
+    }
+
+    #panel.dragging { transition: none; }
+
+    .handle {
+        display: block;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        height: 1rem;
+        background-color: #ffffff;
+        cursor: grab;
+        touch-action: none;
+    }
+
+    .handle::before {
+        content: "";
+        display: block;
+        width: 3rem;
+        height: 0.25rem;
+        margin: 0.75rem auto 0;
+        border-radius: 0.125rem;
+        background-color: #cccccc;
+    }
+}
