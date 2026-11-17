@@ -190,7 +190,8 @@ button:hover { background-color: #eeeeee; }
     color: #000000;
 }
 
-.sl-icon {
+.sl-icon,
+.mt-icon {
     text-align: center;
     width: 1.5rem;
     height: 1.5rem;
@@ -201,6 +202,11 @@ button:hover { background-color: #eeeeee; }
     outline-offset: -2px;
     font-family: 'HanWangKanTan';
     font-weight: 400;
+}
+
+.mt-icon {
+    color: #000000;
+    background-color: #F3BA4B;
 }
 
 .sq-icon,
