@@ -198,10 +198,8 @@ function buildPath(goal, prev, dist) {
     const path = [];
     for (let cur = goal; cur !== null; cur = prev.get(cur)) path.push(cur.split("|"));
     path.reverse();
-
+    
     const lineList = document.createElement("div");
-    const NS = "http://www.w3.org/2000/svg";
-
     lineList.append(`Total: ${Math.floor(dist / 60)}h ${Math.floor(dist % 60)}m ${Math.floor(dist * 60 % 60)}s`);
 
     for (let i = 0; i < path.length; i++) {
