@@ -27,8 +27,6 @@ let suggestIndex = -1;
 
 const NS = "http://www.w3.org/2000/svg";
 const searchables = setSearch();
-
-
 closeSuggest();
 checkMissingStations();
 setSheet("peek");
