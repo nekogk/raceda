@@ -1,20 +1,20 @@
 const city = location.pathname.split("/").filter(Boolean)[0];
 const stations = await (await fetch(`/${city}/stations.json`)).json();
 const lines = await (await fetch(`/${city}/lines.json`)).json();
+const mapResponse = await fetch(`/${city}/map.svg`);
 const result = document.getElementById("result");
 const departureInput = document.getElementById("departure");
 const destinationInput = document.getElementById("destination");
 const suggest = document.getElementById("suggest");
+const searchables = setSearch();
 
-// ───────── 모바일 (너비 768px 이하): 아래에서 끌어올리는 패널 ─────────
-// 패널은 세 높이 중 하나에 멈춘다: peek(입력칸과 버튼만), half(화면 절반), full(맨 위까지)
 const panel = document.getElementById("panel");
 const handle = document.getElementById("handle");
 const mobile = matchMedia("(max-width: 768px)");
-const SHEETS = ["peek", "half", "full"];
+const sheets = ["peek", "half", "full"];
 let sheet = "peek";
+let start = null;
 
-// 각 높이에서 패널을 아래로 내리는 거리(px). 클수록 패널이 많이 숨는다.
 function sheetOffsets() {
     const height = panel.offsetHeight;
     const search = document.getElementById("search");
@@ -28,52 +28,6 @@ function setSheet(state = sheet) {
     panel.style.transform = mobile.matches ? `translateY(${sheetOffsets()[sheet]}px)` : "";
     if (mobile.matches && sheet !== "full") panel.scrollTop = 0;
 }
-
-{
-    let start = null;
-    const draggable = (target) => target === handle || target === panel;
-    panel.addEventListener("pointerdown", (e) => {
-        if (!mobile.matches || !draggable(e.target)) return;
-        start = { y: e.clientY, offset: sheetOffsets()[sheet], time: e.timeStamp, last: e.clientY };
-        panel.setPointerCapture(e.pointerId);
-        panel.classList.add("dragging");
-    });
-    panel.addEventListener("pointermove", (e) => {
-        if (!start) return;
-        const offset = Math.min(sheetOffsets().peek, Math.max(0, start.offset + e.clientY - start.y));
-        panel.style.transform = `translateY(${offset}px)`;
-        start.speed = (e.clientY - start.last) / Math.max(1, e.timeStamp - (start.lastTime ?? start.time));
-        start.last = e.clientY;
-        start.lastTime = e.timeStamp;
-    });
-    const end = (e) => {
-        if (!start) return;
-        panel.classList.remove("dragging");
-        const moved = e.clientY - start.y;
-        const offsets = sheetOffsets();
-        let next;
-        if (Math.abs(moved) < 5) {
-            next = sheet === "peek" ? "half" : "peek";   // 손잡이를 톡 치면 열고 닫는다
-        } else if (Math.abs(start.speed ?? 0) > 0.5) {
-            // 빠르게 튕기면 그 방향으로 한 칸
-            const i = SHEETS.indexOf(sheet) + (start.speed < 0 ? 1 : -1);
-            next = SHEETS[Math.min(SHEETS.length - 1, Math.max(0, i))];
-        } else {
-            // 천천히 놓으면 가장 가까운 높이로
-            const offset = Math.min(offsets.peek, Math.max(0, start.offset + moved));
-            next = SHEETS.reduce((a, b) => (Math.abs(offsets[b] - offset) < Math.abs(offsets[a] - offset) ? b : a));
-        }
-        start = null;
-        setSheet(next);
-    };
-    panel.addEventListener("pointerup", end);
-    panel.addEventListener("pointercancel", end);
-    mobile.addEventListener("change", () => setSheet("peek"));
-    addEventListener("resize", () => setSheet());
-    setSheet("peek");
-}
-
-checkMissingStations();
 
 function checkMissingStations() {
   const missing = new Map();
@@ -90,7 +44,7 @@ function checkMissingStations() {
 
   if (missing.size !== 0) {
     for (const [id, data] of missing) {
-      console.warn(`역 정보 없음: ${id} (${[...new Set(data)].join(", ")})`);
+      //console.warn(`역 정보 없음: ${id} (${[...new Set(data)].join(", ")})`);
     }
   }
 
@@ -108,11 +62,11 @@ function segmentCost(line, service, prev, next) {
     const loop = lines[line].loop;
     
     if (Number.isNaN(distance)) {
-        console.warn(`거리 정보 없음: ${line} ${service} ${prev} → ${next}`);
+        //console.warn(`거리 정보 없음: ${line} ${service} ${prev} → ${next}`);
         return moveCost;
     }
     if (distance <= 0) {
-        console.warn(`거리가 음수임: ${line} ${service} ${prev} → ${next}`);
+        //console.warn(`거리가 음수임: ${line} ${service} ${prev} → ${next}`);
         return moveCost;
     }
 
@@ -273,8 +227,8 @@ function setStation(input, id) {
     input.dataset.id = id ?? "";
 }
 
-const searchables = [];
-{
+function setSearch() {
+    const search = [];
     const used = new Set();
     for (const { services } of Object.values(lines)) {
         for (const stops of Object.values(services)) for (const id of stops) used.add(id);
@@ -283,11 +237,11 @@ const searchables = [];
         if (!used.has(id)) continue;
         const { st, en } = stations[id];
         const named = Boolean(st || en);
-        searchables.push({ id, label: stationLabel(id), keys: named ? [st, en] : [id] });
+        search.push({ id, label: stationLabel(id), keys: named ? [st, en] : [id] });
     }
+    return search;
 }
 
-const SUGGEST_LIMIT = 30;
 let suggestInput = null;
 let suggestIndex = -1;
 
@@ -315,7 +269,7 @@ function openSuggest(input) {
         if (keys.some((key) => key.startsWith(query))) starts.push(item);
         else if (keys.some((key) => key.includes(query))) contains.push(item);
     }
-    const matches = [...starts, ...contains].slice(0, SUGGEST_LIMIT);
+    const matches = [...starts, ...contains];
 
     suggest.replaceChildren();
     for (const { id, label } of matches) {
@@ -356,10 +310,10 @@ for (const input of [departureInput, destinationInput]) {
         openSuggest(input);
     });
     input.addEventListener("focus", () => {
-        if (mobile.matches) setSheet("full");   // 모바일: 자판과 검색 목록이 가리지 않게 패널을 끝까지 올린다
+        if (mobile.matches) setSheet("full");
         openSuggest(input);
     });
-    // 목록을 누르는 순간 입력칸의 blur가 먼저 일어나므로, 클릭이 처리될 틈을 두고 닫는다
+    
     input.addEventListener("blur", () => setTimeout(() => {
         if (suggestInput === input && document.activeElement !== input) closeSuggest();
     }, 200));
@@ -394,28 +348,6 @@ function showRoute(departure, destination) {
     highlightRoute(path.reverse());
 }
 
-document.getElementById("random").addEventListener("click", () => {
-    const usables = searchables.map(({ id }) => id);
-    const departure = usables[Math.floor(Math.random() * usables.length)];
-    const destination = usables[Math.floor(Math.random() * usables.length)];
-    showRoute(departure, destination);
-    if (mobile.matches) setSheet("half");
-});
-
-document.getElementById("search").addEventListener("click", () => {
-    const departure = departureInput.dataset.id;
-    const destination = destinationInput.dataset.id;
-    if (!departure || !destination) {
-        result.replaceChildren("No route found");
-        return;
-    }
-    showRoute(departure, destination);
-    if (mobile.matches) setSheet("half");   // 모바일: 결과가 보이게 패널을 절반까지 올린다
-});
-
-
-// ───────────────────────── 노선도 ─────────────────────────
-// 아래 두 함수는 노선도가 있을 때 setupMap()이 실제 동작으로 바꿔 끼운다
 let highlightRoute = () => {};
 let markStation = () => {};
 
@@ -425,7 +357,6 @@ const STATION_WIDTH = 15;
 const TERMINAL_WIDTH = 13;
 const DIM = 0.2;
 
-const mapResponse = await fetch(`/${city}/map.svg`);
 if (mapResponse.ok) setupMap(new DOMParser().parseFromString(await mapResponse.text(), "image/svg+xml").documentElement);
 else document.getElementById("map").hidden = true;
 
@@ -433,14 +364,6 @@ function setupMap(svg) {
     const [mapX, mapY, mapW, mapH] = svg.getAttribute("viewBox").split(/[\s,]+/).map(Number);
     document.getElementById("map").append(svg);
 
-    // ── 레이어 나누기 ──
-    // map.svg의 레이어: background, line, transfer, station, etc, legend, text
-    // 레이어마다 흐리는 방법이 다르다.
-    //   legend                   → 통째로 흐리게
-    //   background               → 위에 덮는 흰 안개(fog)로 흐리게. 경로 띠 아래는 bgFog로 따로 흐린다
-    //   line, transfer, station  → 경로를 따라 그은 띠에만 구멍이 난 흰 안개(fog)를 위에 덮어서 흐리게
-    //   text                     → 경로에 있는 역의 이름 상자만 남기고 흐리게
-    //   etc                      → 선 조각은 routed의 맨 위로, 이름 뒤의 흰 사각형은 text의 맨 아래로 보낸다
     const layer = (id) => svg.querySelector(`:scope > #${id}`) ?? document.createElementNS(NS, "g");
     const background = layer("background"), lineLayer = layer("line"), legend = layer("legend"), textLayer = layer("text"), etc = layer("etc");
 
@@ -456,16 +379,11 @@ function setupMap(svg) {
     textLayer.before(markLayer);
     svg.append(defs);
 
-    // 역 이름은 조각이 아주 많아서 레이어 전체에 mask나 opacity를 걸면 느리다.
-    // 이름 하나하나(text의 자식)의 가운데 점을 구해 두고, 흐릴 때는 자식마다 따로 opacity를 준다.
-    // (etc에서 옮겨 온 흰색 사각형은 넣지 않는다 → 어느 경우에도 흐려지지 않는다)
     const labels = [...textLayer.querySelectorAll(":scope > g")].map((element) => {
         const { x, y, width, height } = element.getBBox();
         return { element, x: x + width / 2, y: y + height / 2 };
     });
 
-
-    // ── 승강장 좌표 모으기 ──
     const platforms = [];
     const platformsOf = new Map();
     for (const lineData of Object.values(lines)) {
@@ -476,10 +394,6 @@ function setupMap(svg) {
         }
     }
 
-    // 점들을 잇는 SVG 경로. [x, y, n]처럼 세 번째 값이 있는 점(bends의 모서리)에서는
-    // 꺾지 않고 반지름 n의 원호로 돈다. 노선도의 곡선은 모두 반지름이 일정한 원호라서
-    // 원호 하나를 "앞뒤 직선이 만나는 모서리 점 + 반지름" 하나로 나타낼 수 있다.
-    // 이웃한 두 원호가 한 직선 구간을 나눠 쓰는데 길이가 모자라면 두 원호의 반지름을 같은 비율로 줄인다 (반지름은 최대 n).
     function pathOf(points) {
         const pts = points.filter((p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]);
         const m = pts.length;
@@ -521,7 +435,6 @@ function setupMap(svg) {
         return d;
     }
 
-    // 한 역의 승강장들을 잇는 모양. 가장 가까운 승강장끼리 먼저 이어 나간다.
     function stationShape(id) {
         const points = platformsOf.get(id);
         const joined = [points[0]], rest = points.slice(1);
@@ -541,8 +454,6 @@ function setupMap(svg) {
         return d;
     }
 
-
-    // ── 확대·이동 ──
     const view = { x: mapX, y: mapY, w: mapW };
 
     function applyView() {
@@ -551,17 +462,15 @@ function setupMap(svg) {
         svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${h}`);
     }
 
-    // 처음에는 노선도 전체가 화면 가운데에 들어오게 맞춘다
     const ratio = svg.clientWidth / svg.clientHeight;
     view.w = Math.max(mapW, mapH * ratio);
     view.x = mapX + (mapW - view.w) / 2;
     view.y = mapY + (mapH - view.w / ratio) / 2;
-    // 모바일: 아래 패널이 가리는 만큼 노선도를 위로 올려, 보이는 부분의 가운데에 오게 한다
+
     if (mobile.matches) view.y += (innerHeight - panel.getBoundingClientRect().top) / 2 * view.w / svg.clientWidth;
     applyView();
     new ResizeObserver(applyView).observe(svg);
 
-    // 화면 위의 위치 → 노선도 좌표
     function toMapPoint(e) {
         return new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
     }
@@ -577,9 +486,8 @@ function setupMap(svg) {
         applyView();
     }, { passive: false });
 
-    // 끌어서 옮기기(손가락 하나 / 마우스)와 두 손가락으로 벌리고 오므려 확대·축소
     const clampW = (w) => Math.min(mapW * 2, Math.max(mapW / 24, w));
-    const pointers = new Map();   // 화면을 누르고 있는 손가락(포인터) → 화면 좌표
+    const pointers = new Map();
     const middle = () => {
         const [a, b] = [...pointers.values()];
         return { clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2, dist: Math.hypot(a.x - b.x, a.y - b.y) };
@@ -593,8 +501,8 @@ function setupMap(svg) {
             drag = { start: toMapPoint(e), x: e.clientX, y: e.clientY, moved: false };
         } else if (pointers.size === 2) {
             const m = middle();
-            pinch = { dist: m.dist, w: view.w, anchor: toMapPoint(m) };   // anchor: 두 손가락 가운데에 있던 노선도 지점
-            if (drag) drag.moved = true;   // 두 손가락을 쓰면 탭(역 선택)으로 치지 않는다
+            pinch = { dist: m.dist, w: view.w, anchor: toMapPoint(m) };
+            if (drag) drag.moved = true;
         }
     });
     svg.addEventListener("pointermove", (e) => {
@@ -607,7 +515,7 @@ function setupMap(svg) {
             const m = middle();
             view.w = clampW(pinch.w * pinch.dist / Math.max(1, m.dist));
             applyView();
-            const now = toMapPoint(m);   // anchor가 지금 두 손가락 가운데에 오도록 옮긴다
+            const now = toMapPoint(m);
             view.x += pinch.anchor.x - now.x;
             view.y += pinch.anchor.y - now.y;
             applyView();
@@ -624,7 +532,7 @@ function setupMap(svg) {
     const release = (e) => {
         pointers.delete(e.pointerId);
         if (pointers.size < 2) pinch = null;
-        if (pointers.size === 1) {   // 두 손가락 중 하나를 떼면 남은 손가락으로 계속 끈다
+        if (pointers.size === 1) {
             const [p] = pointers.values();
             drag = { start: toMapPoint({ clientX: p.x, clientY: p.y }), x: p.x, y: p.y, moved: true };
         }
@@ -632,11 +540,8 @@ function setupMap(svg) {
     svg.addEventListener("pointerup", release);
     svg.addEventListener("pointercancel", release);
 
-
-    // ── 역 클릭 ──
     function nearestStation(p) {
         let best = null;
-        // 화면에서 약 12px 안쪽 (손가락으로 누르는 기기는 22px)
         const reach = matchMedia("(pointer: coarse)").matches ? 22 : 12;
         let bestDist = Math.max(8, reach * view.w / svg.clientWidth);
         for (const [x, y, id] of platforms) {
@@ -651,7 +556,7 @@ function setupMap(svg) {
         if (drag?.moved) return;
         const id = nearestStation(toMapPoint(e));
         if (id === null) {
-            if (fog.style.display !== "none") {   // 경로가 떠 있으면
+            if (fog.style.display !== "none") {
                 highlightRoute(null);
                 markStation("departure", null);
                 markStation("destination", null);
@@ -676,7 +581,6 @@ function setupMap(svg) {
         }
     });
 
-    // 출발역·도착역 표시: 그 역의 승강장들을 굵고 둥근 선으로 감싼다
     const marks = {};
     markStation = (kind, id) => {
         marks[kind]?.remove();
@@ -687,15 +591,6 @@ function setupMap(svg) {
         markLayer.append(mark);
         marks[kind] = mark;
     };
-
-
-    // ── 경로만 남기고 흐리게 ──
-    // 그림 자체에는 손대지 않고, 그 위에 반투명한 흰 사각형(안개)을 덮어서 흐리게 한다.
-    // 흰 바탕 위에서는 "불투명도 DIM으로 그리기"와 "흰색을 1 - DIM만큼 덮기"가 똑같아 보인다.
-    // (여러 요소를 묶은 그룹에 mask를 씌우면 Safari는 요소마다 따로 흐려서, 역 점이나 환승 표시 뒤의 선이 비쳐 보인다.
-    //  안개는 사각형 하나라서 어느 브라우저에서도 똑같이 그려진다.)
-    // 안개의 모양은 마스크로 정한다: 흰색으로 칠한 곳에는 안개가 끼고, 검은색으로 칠한 곳은 맑다.
-    // 나중에 칠한 것이 먼저 칠한 것을 덮으므로, 칠하는 순서가 곧 그림의 위아래 순서가 된다.
 
     function makeMask(id) {
         const mask = document.createElementNS(NS, "mask");
@@ -720,8 +615,6 @@ function setupMap(svg) {
         return stroke;
     }
 
-    // 노선 그림의 위아래 순서: line 레이어의 그룹 하나가 노선 하나이고, 뒤에 있는 그룹일수록 위에 그려진다.
-    // 그룹마다 색이 있는 실선(노선 본체)을 찾아, 그 모양 그대로 회색 ROUTE_WIDTH 두께의 '덮개'를 만들어 둔다.
     const toRgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
     const isBody = (element) => {
         const style = getComputedStyle(element);
@@ -738,8 +631,6 @@ function setupMap(svg) {
         return { color: style?.stroke, bodies, covers: bodies.map(makeCover) };
     });
 
-    // lines.json의 노선이 몇 번째 그룹인지: 색이 같은 그룹 중, 그 노선의 승강장 좌표를 가장 많이 지나는 것
-    // (색이 같은 노선이 여럿 있어도 실제로 그려진 선으로 구별한다)
     const groupOf = {};
     for (const [line, lineData] of Object.entries(lines)) {
         const color = toRgb(lineData.color);
@@ -753,13 +644,11 @@ function setupMap(svg) {
         groupOf[line] = best;
     }
 
-    // etc에서 온 선 조각(환승 표시 위를 지나는 다리)은 모든 것의 위에 있다
     const bridgeCovers = [...bridges.children].filter(isBody).map((element) => {
         const middle = element.getPointAtLength(element.getTotalLength() / 2);
         return { color: getComputedStyle(element).stroke, middle: [middle.x, middle.y], cover: makeCover(element) };
     });
 
-    // 승강장 사이는 직선으로 잇되, 선이 휘는 구간은 lines.json의 bends에 적힌 모서리 [x, y, n]을 거쳐 반지름 n으로 돈다
     function edgePoints(line, a, b) {
         const lineData = lines[line];
         if (!lineData.positions?.[a] || !lineData.positions?.[b]) return [];
@@ -767,7 +656,6 @@ function setupMap(svg) {
         return [lineData.positions[a], ...bends, lineData.positions[b]];
     }
 
-    // a에서 b까지 실제로 지나가는 역들 (급행이 통과하는 역 포함): 둘 사이가 가장 촘촘한 계통의 목록을 쓴다
     function stopsBetween(line, a, b) {
         let best = [a, b];
         for (const stops of Object.values(lines[line].services)) {
@@ -786,7 +674,6 @@ function setupMap(svg) {
         return best;
     }
 
-    // 점에서 꺾은선까지의 거리
     function distanceTo(points, [x, y]) {
         let best = Infinity;
         for (let i = 1; i < points.length; i++) {
@@ -798,8 +685,6 @@ function setupMap(svg) {
         return best;
     }
 
-    // fog: line·transfer·station 위에 덮는 안개 (경로 띠만 맑다)
-    // bgFog: background 위, 노선 아래에 덮는 안개 (경로 띠에만 낀다). 띠 밖의 background는 fog가 흐린다.
     const fogMask = makeMask("fog-mask");
     const bgFogMask = makeMask("bg-fog-mask");
     const makeFog = (maskId) => {
@@ -815,8 +700,6 @@ function setupMap(svg) {
     routed.after(fog);
     routed.before(bgFog);
 
-    // 종점: 한 노선에서 어떤 계통의 처음이나 마지막에 오고, 어느 계통에서도 중간에 오지 않는 역
-    // (급행이 중간역에서 출발하거나 끝나는 경우는 종점이 아니다. 순환선은 종점이 없다)
     const terminals = new Set();
     for (const { services, loop } of Object.values(lines)) {
         if (loop) continue;
@@ -835,7 +718,6 @@ function setupMap(svg) {
             return;
         }
 
-        // 노선별로, 그 노선을 타고 가는 구간들의 모양을 모은다
         const rides = new Map();
         const passedStations = new Set(path.map(([station]) => station));
         for (let i = 1; i < path.length; i++) {
@@ -850,7 +732,6 @@ function setupMap(svg) {
             if (!rides.has(line)) rides.set(line, []);
             rides.get(line).push(points);
         }
-        // 경로 띠와 역 모양: fog에는 검은색(맑게), bgFog에는 흰색(안개)으로 같은 모양을 칠한다
         const clear = [];
         const addClear = (d, width) => {
             clear.push([d, width]);
@@ -858,10 +739,6 @@ function setupMap(svg) {
         };
         const strokesOf = (line) => rides.get(line).map((points) => addClear(pathOf(points), ROUTE_WIDTH));
 
-        // fog: 전체를 흰색(안개)으로 깔고, 아래에 있는 노선부터 차례로 칠한다.
-        //   모든 노선  → 흰색 덮개 (ROUTE_WIDTH)
-        //   타는 노선  → 그 위에 경로 구간을 검은색 띠로 (ROUTE_WIDTH)
-        // 이렇게 하면 경로보다 위에 그려진 다른 노선은 띠 위에 안개로 남아서, 겹치는 곳에서 경로를 덮은 채로 흐려진다.
         fogMask.replaceChildren(makeRect(mapX, mapY, mapW, mapH, "white"));
         lineGroups.forEach((group, i) => {
             fogMask.append(...group.covers);
@@ -869,15 +746,12 @@ function setupMap(svg) {
         });
         for (const line of rides.keys()) if (groupOf[line] < 0) fogMask.append(...strokesOf(line));
 
-        // 다리 조각: 같은 색 노선의 경로가 그 자리를 지나가면 그대로 두고, 아니면 회색으로 덮는다
         for (const bridge of bridgeCovers) {
             const used = [...rides].some(([line, list]) =>
                 toRgb(lines[line].color) === bridge.color && list.some((points) => distanceTo(points, bridge.middle) < 3));
             if (!used) fogMask.append(bridge.cover);
         }
 
-        // 경로가 서거나 통과하는 환승역(승강장이 둘 이상인 역)은 환승 표시 전체를 남기고,
-        // 환승역이 아닌 종점은 그 점을 중심으로 지름 TERMINAL_WIDTH의 원을 남긴다
         for (const station of passedStations) {
             const count = platformsOf.get(station)?.length ?? 0;
             if (count > 1) {
@@ -887,14 +761,11 @@ function setupMap(svg) {
             }
         }
 
-        // bgFog: 맑게 남긴 모양 그대로, 그 아래의 background만 흐린다
         bgFogMask.replaceChildren(...clear.map(([d, width]) => makeStroke(d, "white", width)));
         fog.style.display = bgFog.style.display = "";
 
-        // legend: 통째로 흐리게
         legend.style.opacity = DIM;
 
-        // text: 경로에 있는 역의 이름 상자 안에 있는 이름만 남기고 흐리게
         const boxes = path.map(([station]) => stations[station]?.box).filter(Boolean);
         for (const { element, x, y } of labels) {
             const lit = boxes.some(([x1, y1, x2, y2]) => x1 <= x && x <= x2 && y1 <= y && y <= y2);
@@ -902,3 +773,63 @@ function setupMap(svg) {
         }
     };
 }
+
+panel.addEventListener("pointerdown", (e) => {
+    if (!mobile.matches || (e.target !== handle && e.target !== panel)) return;
+    start = { y: e.clientY, offset: sheetOffsets()[sheet], time: e.timeStamp, last: e.clientY };
+    panel.setPointerCapture(e.pointerId);
+    panel.classList.add("dragging");
+});
+
+panel.addEventListener("pointermove", (e) => {
+    if (!start) return;
+    const offset = Math.min(sheetOffsets().peek, Math.max(0, start.offset + e.clientY - start.y));
+    panel.style.transform = `translateY(${offset}px)`;
+    start.speed = (e.clientY - start.last) / Math.max(1, e.timeStamp - (start.lastTime ?? start.time));
+    start.last = e.clientY;
+    start.lastTime = e.timeStamp;
+});
+
+const end = (e) => {
+    if (!start) return;
+    panel.classList.remove("dragging");
+    const moved = e.clientY - start.y;
+    const offsets = sheetOffsets();
+    let next;
+    if (Math.abs(moved) < 5) {
+        next = sheet === "peek" ? "half" : "peek";
+    } else if (Math.abs(start.speed ?? 0) > 0.5) {
+        const i = sheets.indexOf(sheet) + (start.speed < 0 ? 1 : -1);
+        next = sheets[Math.min(sheets.length - 1, Math.max(0, i))];
+    } else {
+        const offset = Math.min(offsets.peek, Math.max(0, start.offset + moved));
+        next = sheets.reduce((a, b) => (Math.abs(offsets[b] - offset) < Math.abs(offsets[a] - offset) ? b : a));
+    }
+    start = null;
+    setSheet(next);
+};
+
+panel.addEventListener("pointerup", end);
+panel.addEventListener("pointercancel", end);
+mobile.addEventListener("change", () => setSheet("peek"));
+checkMissingStations();
+setSheet("peek");
+
+document.getElementById("random").addEventListener("click", () => {
+    const usables = searchables.map(({ id }) => id);
+    const departure = usables[Math.floor(Math.random() * usables.length)];
+    const destination = usables[Math.floor(Math.random() * usables.length)];
+    showRoute(departure, destination);
+    if (mobile.matches) setSheet("half");
+});
+
+document.getElementById("search").addEventListener("click", () => {
+    const departure = departureInput.dataset.id;
+    const destination = destinationInput.dataset.id;
+    if (!departure || !destination) {
+        result.replaceChildren("No route found");
+        return;
+    }
+    showRoute(departure, destination);
+    if (mobile.matches) setSheet("half");
+});
