@@ -6,14 +6,32 @@ const result = document.getElementById("result");
 const departureInput = document.getElementById("departure");
 const destinationInput = document.getElementById("destination");
 const suggest = document.getElementById("suggest");
-const searchables = setSearch();
-
 const panel = document.getElementById("panel");
 const handle = document.getElementById("handle");
+
 const mobile = matchMedia("(max-width: 768px)");
 const sheets = ["peek", "half", "full"];
 let sheet = "peek";
 let start = null;
+
+const moveCost = 3;
+const platformCost = 5;
+const transferCost = 7;
+const routhWidth = 7;
+const transferWidth = 15;
+const terminalWidth = 13;
+const dimStrength = 0.2;
+
+let suggestInput = null;
+let suggestIndex = -1;
+
+const NS = "http://www.w3.org/2000/svg";
+const searchables = setSearch();
+
+
+closeSuggest();
+checkMissingStations();
+setSheet("peek");
 
 function sheetOffsets() {
     const height = panel.offsetHeight;
@@ -27,6 +45,58 @@ function setSheet(state = sheet) {
     sheet = state;
     panel.style.transform = mobile.matches ? `translateY(${sheetOffsets()[sheet]}px)` : "";
     if (mobile.matches && sheet !== "full") panel.scrollTop = 0;
+}
+
+function stationLabel(id) {
+    const { st, en } = stations[id] ?? {};
+    return [st, en].filter(Boolean).join(" ") || id;
+}
+
+function setStation(input, id) {
+    input.value = id ? stationLabel(id) : "";
+    input.dataset.id = id ?? "";
+}
+
+function setSearch() {
+    const search = [];
+    const used = new Set();
+    
+    for (const input of [departureInput, destinationInput]) {
+        input.autocomplete = "off";
+        input.addEventListener("input", () => {
+            input.dataset.id = "";
+            openSuggest(input);
+        });
+        input.addEventListener("focus", () => {
+            if (mobile.matches) setSheet("full");
+            openSuggest(input);
+        });
+        
+        input.addEventListener("blur", () => setTimeout(() => {
+            if (suggestInput === input && document.activeElement !== input) closeSuggest();
+        }, 200));
+        input.addEventListener("keydown", (event) => {
+            if (suggestInput !== input) return;
+            if (event.key === "ArrowDown") moveSuggest(1);
+            else if (event.key === "ArrowUp") moveSuggest(-1);
+            else if (event.key === "Enter" && suggestIndex >= 0) {
+                chooseSuggest(input, suggest.querySelectorAll("li[data-id]")[suggestIndex].dataset.id);
+            } else if (event.key === "Escape") closeSuggest();
+            else return;
+            event.preventDefault();
+        });
+    }
+
+    for (const { services } of Object.values(lines)) {
+        for (const stops of Object.values(services)) for (const id of stops) used.add(id);
+    }
+    for (const id of Object.keys(stations)) {
+        if (!used.has(id)) continue;
+        const { st, en } = stations[id];
+        const named = Boolean(st || en);
+        search.push({ id, label: stationLabel(id), keys: named ? [st, en] : [id] });
+    }
+    return search;
 }
 
 function checkMissingStations() {
@@ -50,10 +120,6 @@ function checkMissingStations() {
 
   return;
 }
-
-const moveCost = 3;
-const platformCost = 5;
-const transferCost = 7;
 
 function segmentCost(line, service, prev, next) {
     const distance = lines[line].distances?.[next] - lines[line].distances?.[prev]
@@ -217,34 +283,6 @@ function buildPath(goal, prev, dist) {
     return lineList;
 }
 
-function stationLabel(id) {
-    const { st, en } = stations[id] ?? {};
-    return [st, en].filter(Boolean).join(" ") || id;
-}
-
-function setStation(input, id) {
-    input.value = id ? stationLabel(id) : "";
-    input.dataset.id = id ?? "";
-}
-
-function setSearch() {
-    const search = [];
-    const used = new Set();
-    for (const { services } of Object.values(lines)) {
-        for (const stops of Object.values(services)) for (const id of stops) used.add(id);
-    }
-    for (const id of Object.keys(stations)) {
-        if (!used.has(id)) continue;
-        const { st, en } = stations[id];
-        const named = Boolean(st || en);
-        search.push({ id, label: stationLabel(id), keys: named ? [st, en] : [id] });
-    }
-    return search;
-}
-
-let suggestInput = null;
-let suggestIndex = -1;
-
 function closeSuggest() {
     suggest.replaceChildren();
     suggest.hidden = true;
@@ -303,32 +341,6 @@ function moveSuggest(step) {
     items[suggestIndex].scrollIntoView({ block: "nearest" });
 }
 
-for (const input of [departureInput, destinationInput]) {
-    input.autocomplete = "off";
-    input.addEventListener("input", () => {
-        input.dataset.id = "";
-        openSuggest(input);
-    });
-    input.addEventListener("focus", () => {
-        if (mobile.matches) setSheet("full");
-        openSuggest(input);
-    });
-    
-    input.addEventListener("blur", () => setTimeout(() => {
-        if (suggestInput === input && document.activeElement !== input) closeSuggest();
-    }, 200));
-    input.addEventListener("keydown", (event) => {
-        if (suggestInput !== input) return;
-        if (event.key === "ArrowDown") moveSuggest(1);
-        else if (event.key === "ArrowUp") moveSuggest(-1);
-        else if (event.key === "Enter" && suggestIndex >= 0) {
-            chooseSuggest(input, suggest.querySelectorAll("li[data-id]")[suggestIndex].dataset.id);
-        } else if (event.key === "Escape") closeSuggest();
-        else return;
-        event.preventDefault();
-    });
-}
-closeSuggest();
 
 function showRoute(departure, destination) {
     setStation(departureInput, departure);
@@ -350,12 +362,6 @@ function showRoute(departure, destination) {
 
 let highlightRoute = () => {};
 let markStation = () => {};
-
-const NS = "http://www.w3.org/2000/svg";
-const ROUTE_WIDTH = 7;
-const STATION_WIDTH = 15;
-const TERMINAL_WIDTH = 13;
-const DIM = 0.2;
 
 if (mapResponse.ok) setupMap(new DOMParser().parseFromString(await mapResponse.text(), "image/svg+xml").documentElement);
 else document.getElementById("map").hidden = true;
@@ -623,7 +629,7 @@ function setupMap(svg) {
     const makeCover = (element) => {
         const cover = element.cloneNode(false);
         cover.removeAttribute("class");
-        return setStroke(cover, "white", ROUTE_WIDTH);
+        return setStroke(cover, "white", routhWidth);
     };
     const lineGroups = [...lineLayer.children].map((group) => {
         const bodies = [...group.querySelectorAll("path, line, circle, polyline")].filter(isBody);
@@ -689,7 +695,7 @@ function setupMap(svg) {
     const bgFogMask = makeMask("bg-fog-mask");
     const makeFog = (maskId) => {
         const fog = makeRect(mapX, mapY, mapW, mapH, "white");
-        fog.setAttribute("fill-opacity", 1 - DIM);
+        fog.setAttribute("fill-opacity", 1 - dimStrength);
         fog.setAttribute("mask", `url(#${maskId})`);
         fog.style.pointerEvents = "none";
         fog.style.display = "none";
@@ -737,7 +743,7 @@ function setupMap(svg) {
             clear.push([d, width]);
             return makeStroke(d, "black", width);
         };
-        const strokesOf = (line) => rides.get(line).map((points) => addClear(pathOf(points), ROUTE_WIDTH));
+        const strokesOf = (line) => rides.get(line).map((points) => addClear(pathOf(points), routhWidth));
 
         fogMask.replaceChildren(makeRect(mapX, mapY, mapW, mapH, "white"));
         lineGroups.forEach((group, i) => {
@@ -755,21 +761,21 @@ function setupMap(svg) {
         for (const station of passedStations) {
             const count = platformsOf.get(station)?.length ?? 0;
             if (count > 1) {
-                fogMask.append(addClear(stationShape(station), STATION_WIDTH));
+                fogMask.append(addClear(stationShape(station), transferWidth));
             } else if (count === 1 && terminals.has(station)) {
-                fogMask.append(addClear(stationShape(station), TERMINAL_WIDTH));
+                fogMask.append(addClear(stationShape(station), terminalWidth));
             }
         }
 
         bgFogMask.replaceChildren(...clear.map(([d, width]) => makeStroke(d, "white", width)));
         fog.style.display = bgFog.style.display = "";
 
-        legend.style.opacity = DIM;
+        legend.style.opacity = dimStrength;
 
         const boxes = path.map(([station]) => stations[station]?.box).filter(Boolean);
         for (const { element, x, y } of labels) {
             const lit = boxes.some(([x1, y1, x2, y2]) => x1 <= x && x <= x2 && y1 <= y && y <= y2);
-            element.style.opacity = lit ? "" : DIM;
+            element.style.opacity = lit ? "" : dimStrength;
         }
     };
 }
@@ -790,7 +796,7 @@ panel.addEventListener("pointermove", (e) => {
     start.lastTime = e.timeStamp;
 });
 
-const end = (e) => {
+panel.addEventListener("pointerup", (e) => {
     if (!start) return;
     panel.classList.remove("dragging");
     const moved = e.clientY - start.y;
@@ -807,13 +813,28 @@ const end = (e) => {
     }
     start = null;
     setSheet(next);
-};
+});
 
-panel.addEventListener("pointerup", end);
-panel.addEventListener("pointercancel", end);
+panel.addEventListener("pointercancel", (e) => {
+    if (!start) return;
+    panel.classList.remove("dragging");
+    const moved = e.clientY - start.y;
+    const offsets = sheetOffsets();
+    let next;
+    if (Math.abs(moved) < 5) {
+        next = sheet === "peek" ? "half" : "peek";
+    } else if (Math.abs(start.speed ?? 0) > 0.5) {
+        const i = sheets.indexOf(sheet) + (start.speed < 0 ? 1 : -1);
+        next = sheets[Math.min(sheets.length - 1, Math.max(0, i))];
+    } else {
+        const offset = Math.min(offsets.peek, Math.max(0, start.offset + moved));
+        next = sheets.reduce((a, b) => (Math.abs(offsets[b] - offset) < Math.abs(offsets[a] - offset) ? b : a));
+    }
+    start = null;
+    setSheet(next);
+});
+
 mobile.addEventListener("change", () => setSheet("peek"));
-checkMissingStations();
-setSheet("peek");
 
 document.getElementById("random").addEventListener("click", () => {
     const usables = searchables.map(({ id }) => id);
