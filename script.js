@@ -388,10 +388,13 @@ function setupMap(svg) {
     const platforms = [];
     const platformsOf = new Map();
     for (const lineData of Object.values(lines)) {
-        for (const [id, [x, y]] of Object.entries(lineData.positions ?? {})) {
-            platforms.push([x, y, id]);
-            if (!platformsOf.has(id)) platformsOf.set(id, []);
-            platformsOf.get(id).push([x, y]);
+        const all = [lineData.positions ?? {}, ...Object.values(lineData.servicePositions ?? {})];
+        for (const positions of all) {
+            for (const [id, [x, y]] of Object.entries(positions)) {
+                platforms.push([x, y, id]);
+                if (!platformsOf.has(id)) platformsOf.set(id, []);
+                platformsOf.get(id).push([x, y]);
+            }
         }
     }
 
@@ -650,11 +653,12 @@ function setupMap(svg) {
         return { color: getComputedStyle(element).stroke, middle: [middle.x, middle.y], cover: makeCover(element) };
     });
 
-    function edgePoints(line, a, b) {
+    function edgePoints(line, service, a, b) {
         const lineData = lines[line];
-        if (!lineData.positions?.[a] || !lineData.positions?.[b]) return [];
+        const position = (id) => lineData.servicePositions?.[service]?.[id] ?? lineData.positions?.[id];
+        if (!position(a) || !position(b)) return [];
         const bends = lineData.bends?.[`${a}|${b}`] ?? [...(lineData.bends?.[`${b}|${a}`] ?? [])].reverse();
-        return [lineData.positions[a], ...bends, lineData.positions[b]];
+        return [position(a), ...bends, position(b)];
     }
 
     function stopsBetween(line, a, b) {
@@ -728,7 +732,7 @@ function setupMap(svg) {
             const passed = stopsBetween(line, a, b);
             for (const station of passed) passedStations.add(station);
             const points = [];
-            for (let j = 1; j < passed.length; j++) points.push(...edgePoints(line, passed[j - 1], passed[j]));
+            for (let j = 1; j < passed.length; j++) points.push(...edgePoints(line, service, passed[j - 1], passed[j]));
             if (points.length === 0) continue;
             if (!rides.has(line)) rides.set(line, []);
             rides.get(line).push(points);
