@@ -337,7 +337,6 @@ function moveSuggest(step) {
     items[suggestIndex].scrollIntoView({ block: "nearest" });
 }
 
-
 function showRoute(departure, destination) {
     setStation(departureInput, departure);
     setStation(destinationInput, destination);
@@ -367,7 +366,7 @@ function setupMap(svg) {
     document.getElementById("map").append(svg);
 
     const layer = (id) => svg.querySelector(`:scope > #${id}`) ?? document.createElementNS(NS, "g");
-    const background = layer("background"), lineLayer = layer("line"), legend = layer("legend"), textLayer = layer("text"), etc = layer("etc");
+    const lineLayer = layer("line"), legend = layer("legend"), textLayer = layer("text"), etc = layer("etc");
 
     const defs = document.createElementNS(NS, "defs");
     const routed = document.createElementNS(NS, "g");
@@ -776,6 +775,29 @@ function setupMap(svg) {
     };
 }
 
+const end = (e) => {
+    if (!start) return;
+    panel.classList.remove("dragging");
+    const moved = e.clientY - start.y;
+    const offsets = sheetOffsets();
+    let next;
+    if (Math.abs(moved) < 5) {
+        next = sheet === "peek" ? "half" : "peek";
+    } else if (Math.abs(start.speed ?? 0) > 0.5) {
+        const i = sheets.indexOf(sheet) + (start.speed < 0 ? 1 : -1);
+        next = sheets[Math.min(sheets.length - 1, Math.max(0, i))];
+    } else {
+        const offset = Math.min(offsets.peek, Math.max(0, start.offset + moved));
+        next = sheets.reduce((a, b) => (Math.abs(offsets[b] - offset) < Math.abs(offsets[a] - offset) ? b : a));
+    }
+    start = null;
+    setSheet(next);
+}
+
+panel.addEventListener("pointerup", end);
+panel.addEventListener("pointercancel", end);
+mobile.addEventListener("change", () => setSheet("peek"));
+
 panel.addEventListener("pointerdown", (e) => {
     if (!mobile.matches || (e.target !== handle && e.target !== panel)) return;
     start = { y: e.clientY, offset: sheetOffsets()[sheet], time: e.timeStamp, last: e.clientY };
@@ -791,46 +813,6 @@ panel.addEventListener("pointermove", (e) => {
     start.last = e.clientY;
     start.lastTime = e.timeStamp;
 });
-
-panel.addEventListener("pointerup", (e) => {
-    if (!start) return;
-    panel.classList.remove("dragging");
-    const moved = e.clientY - start.y;
-    const offsets = sheetOffsets();
-    let next;
-    if (Math.abs(moved) < 5) {
-        next = sheet === "peek" ? "half" : "peek";
-    } else if (Math.abs(start.speed ?? 0) > 0.5) {
-        const i = sheets.indexOf(sheet) + (start.speed < 0 ? 1 : -1);
-        next = sheets[Math.min(sheets.length - 1, Math.max(0, i))];
-    } else {
-        const offset = Math.min(offsets.peek, Math.max(0, start.offset + moved));
-        next = sheets.reduce((a, b) => (Math.abs(offsets[b] - offset) < Math.abs(offsets[a] - offset) ? b : a));
-    }
-    start = null;
-    setSheet(next);
-});
-
-panel.addEventListener("pointercancel", (e) => {
-    if (!start) return;
-    panel.classList.remove("dragging");
-    const moved = e.clientY - start.y;
-    const offsets = sheetOffsets();
-    let next;
-    if (Math.abs(moved) < 5) {
-        next = sheet === "peek" ? "half" : "peek";
-    } else if (Math.abs(start.speed ?? 0) > 0.5) {
-        const i = sheets.indexOf(sheet) + (start.speed < 0 ? 1 : -1);
-        next = sheets[Math.min(sheets.length - 1, Math.max(0, i))];
-    } else {
-        const offset = Math.min(offsets.peek, Math.max(0, start.offset + moved));
-        next = sheets.reduce((a, b) => (Math.abs(offsets[b] - offset) < Math.abs(offsets[a] - offset) ? b : a));
-    }
-    start = null;
-    setSheet(next);
-});
-
-mobile.addEventListener("change", () => setSheet("peek"));
 
 document.getElementById("random").addEventListener("click", () => {
     const usables = searchables.map(({ id }) => id);

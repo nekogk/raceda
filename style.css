@@ -36,11 +36,6 @@
   unicode-range: U+3400-4DBF, U+4E00-9FFF;
 }
 
-@font-face {
-  font-family: 'HanWangKanTan';
-  src: url(/fonts/HanWangKanTan.ttf) format('truetype');
-}
-
 :root {
   --sans-font: 'sansRm', 'sansLa', 'sansSc', sans-serif;
 }
@@ -178,62 +173,6 @@ button:hover { background-color: #eeeeee; }
     align-items: center;
 }
 
-.hy-icon {
-    text-align: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 25%;
-    line-height: 1.5rem;
-    margin: 0.25rem;
-    outline: 2px solid;
-    outline-offset: -2px;
-    color: #000000;
-}
-
-.sl-icon,
-.mt-icon {
-    text-align: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 50%;
-    line-height: 1.5rem;
-    margin: 0.25rem;
-    outline: 2px solid;
-    outline-offset: -2px;
-    font-family: 'HanWangKanTan';
-    font-weight: 400;
-}
-
-.mt-icon {
-    color: #000000;
-    background-color: #F3BA4B;
-}
-
-.sq-icon,
-.sm-icon,
-.kr1-icon,
-.kr2-icon,
-.kr3-icon {
-    text-align: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 50%;
-    line-height: 1.5rem;
-    margin: 0.25rem;
-    color: #ffffff;
-}
-
-
-.kr1-icon { font-size: 0.75rem; }
-.kr2-icon { font-size: 0.5rem; }
-
-.kr3-icon {
-    height: 1rem;
-    padding: 0.25rem 0;
-    font-size: 0.5rem;
-    line-height: 0.5rem;
-}
-
 .line-row {
     display: flex;
     align-items: center;
@@ -266,10 +205,10 @@ body.home {
 .city-map {
     position: absolute;
     max-width: none;
-    width: calc(100% * 2560 / 360);
-    left: calc(-100% * 1635 / 360);
-    top: calc(-100% * 1610 / 360);
-    transition: filter 0.3s;
+    width: calc(100% * var(--map) / 360);
+    left: calc(-100% * (var(--x) - 360 / 2) / 360);
+    top: calc(-100% * (var(--y) - 360 / 2) / 360);
+    transition: filter 0.2s ease;
 }
 
 .city-name {
@@ -284,7 +223,7 @@ body.home {
     font-weight: 700;
     letter-spacing: 0.15em;
     opacity: 0;
-    transition: opacity 0.3s;
+    transition: opacity 0.2s ease;
 }
 
 .city:hover .city-map,
@@ -322,7 +261,7 @@ body.home {
         border-top: 1px solid #dddddd;
         background-color: #ffffff;
         transform: translateY(calc(100% - 9rem));
-        transition: transform 0.25s ease;
+        transition: transform 0.2s ease;
     }
 
     #panel.dragging { transition: none; }
