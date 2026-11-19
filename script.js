@@ -120,10 +120,11 @@ function checkMissingStations() {
 }
 
 function segmentCost(line, service, prev, next) {
-    const distance = lines[line].distances?.[next] - lines[line].distances?.[prev]
+    const loop = lines[line].loop;
+    const raw = lines[line].distances?.[next] - lines[line].distances?.[prev];
+    const distance = loop && raw < 0 ? loop + raw : raw;
     const velocity = lines[line].velocities?.[service] ?? 1;
     const dwell = lines[line].dwells?.[service] ?? 1;
-    const loop = lines[line].loop;
     
     if (Number.isNaN(distance)) {
         //console.warn(`거리 정보 없음: ${line} ${service} ${prev} → ${next}`);
@@ -134,26 +135,50 @@ function segmentCost(line, service, prev, next) {
         return moveCost;
     }
 
-    return (loop && distance < 0 ? loop + distance : distance) / velocity + dwell;
+    return distance / velocity + dwell;
+}
+
+function hasOneway(line, service) {
+    return lines[line].oneway?.[service] !== undefined;
+}
+
+function stateKey(station, line, service, index) {
+    return hasOneway(line, service) ? `${station}|${line}|${service}|${index}` : `${station}|${line}|${service}`;
+}
+
+function indexesOf(stops, station) {
+    const result = [];
+    stops.forEach((s, i) => { if (s === station) result.push(i); });
+    return result;
+}
+
+function blockedBackward(line, service, i) {
+    return (lines[line].oneway?.[service] ?? []).some(([a, b]) => a <= i - 1 && i <= b);
 }
 
 function getNeighbors(key) {
-    const [station, line, service] = key.split("|");
+    const [station, line, service, at] = key.split("|");
     const stops = lines[line].services[service];
     const neighbors = new Map();
 
     for (const [lineId, lineData] of Object.entries(lines)) {
         for (const [serviceId, serviceData] of Object.entries(lineData.services)) {
-            if (!serviceData.includes(station)) continue;
-            if (lineId === line && serviceId === service) continue;
-            neighbors.set(`${station}|${lineId}|${serviceId}`, lineId === line ? platformCost : transferCost);
+            for (const i of indexesOf(serviceData, station)) {
+                const next = stateKey(station, lineId, serviceId, i);
+                if (next === key) continue;
+                neighbors.set(next, lineId === line ? platformCost : transferCost);
+            }
         }
     }
 
-    for (let i = 0; i < stops.length; i++) {
-        if (stops[i] !== station) continue;
-        if (i > 0) neighbors.set(`${stops[i - 1]}|${line}|${service}`, segmentCost(line, service, stops[i - 1], station));
-        if (i < stops.length - 1) neighbors.set(`${stops[i + 1]}|${line}|${service}`, segmentCost(line, service, station, stops[i + 1]));
+    const here = at === undefined ? indexesOf(stops, station) : [Number(at)];
+    for (const i of here) {
+        if (i > 0 && !blockedBackward(line, service, i)) {
+            neighbors.set(stateKey(stops[i - 1], line, service, i - 1), segmentCost(line, service, stops[i - 1], station));
+        }
+        if (i < stops.length - 1) {
+            neighbors.set(stateKey(stops[i + 1], line, service, i + 1), segmentCost(line, service, station, stops[i + 1]));
+        }
     }
 
     return neighbors;
@@ -166,8 +191,8 @@ function getRoute(from, to) {
 
     for (const [lineId, lineData] of Object.entries(lines)) {
         for (const [serviceId, serviceData] of Object.entries(lineData.services)) {
-            if (serviceData.includes(from)) {
-                const key = `${from}|${lineId}|${serviceId}`;
+            for (const i of indexesOf(serviceData, from)) {
+                const key = stateKey(from, lineId, serviceId, i);
                 dist.set(key, 0);
                 prev.set(key, null);
                 queue.add(key);
@@ -375,9 +400,10 @@ function setupMap(svg) {
 
     lineLayer.before(routed);
     bridges.append(...etc.querySelectorAll(":scope > path, :scope > line"));
-    textLayer.prepend(...etc.querySelectorAll(":scope > rect"));
+    const boxLayer = document.createElementNS(NS, "g");
+    boxLayer.append(...etc.querySelectorAll(":scope > rect"));
     routed.append(lineLayer, layer("transfer"), layer("station"), bridges);
-    textLayer.before(markLayer);
+    textLayer.before(boxLayer, markLayer);
     svg.append(defs);
 
     const labels = [...textLayer.querySelectorAll(":scope > g")].map((element) => {
@@ -661,6 +687,11 @@ function setupMap(svg) {
         return [position(a), ...bends, position(b)];
     }
 
+    function stopsByIndex(line, service, i, j) {
+        const stops = lines[line].services[service];
+        return i <= j ? stops.slice(i, j + 1) : stops.slice(j, i + 1).reverse();
+    }
+
     function stopsBetween(line, a, b) {
         let best = [a, b];
         for (const stops of Object.values(lines[line].services)) {
@@ -728,8 +759,10 @@ function setupMap(svg) {
         for (let i = 1; i < path.length; i++) {
             const [a, line, service] = path[i - 1];
             const [b, nextLine, nextService] = path[i];
-            if (line !== nextLine || service !== nextService) continue;
-            const passed = stopsBetween(line, a, b);
+            if (line !== nextLine || service !== nextService || a === b) continue;
+            const passed = path[i][3] !== undefined
+                ? stopsByIndex(line, service, Number(path[i - 1][3]), Number(path[i][3]))
+                : stopsBetween(line, a, b);
             for (const station of passed) passedStations.add(station);
             const points = [];
             for (let j = 1; j < passed.length; j++) points.push(...edgePoints(line, service, passed[j - 1], passed[j]));

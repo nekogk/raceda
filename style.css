@@ -161,6 +161,9 @@ button:hover { background-color: #eeeeee; }
 .station-mark.departure { stroke: red; }
 .station-mark.destination { stroke: blue; }
 
+.line-box > svg,
+.line-row > div { flex: none; }
+
 .station-row {
     display: flex;
     align-items: center;
