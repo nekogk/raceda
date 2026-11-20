@@ -403,8 +403,8 @@ function setupMap(svg) {
     const boxLayer = document.createElementNS(NS, "g");
     boxLayer.append(...etc.querySelectorAll(":scope > rect"));
     routed.append(lineLayer, layer("transfer"), layer("station"), bridges);
-    textLayer.before(boxLayer, markLayer);
-    svg.append(defs);
+    legend.before(boxLayer);
+    svg.append(defs, markLayer);
 
     const labels = [...textLayer.querySelectorAll(":scope > g")].map((element) => {
         const { x, y, width, height } = element.getBBox();
