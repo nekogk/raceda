@@ -1,7 +1,15 @@
+@font-face {
+  font-family: 'Saira';
+  src: url(../fonts/Saira.ttf) format('truetype');
+}
+
 .sm-icon,
+.ui-icon,
+.gtx-icon,
 .kr1-icon,
 .kr2-icon,
-.kr3-icon {
+.kr3-icon,
+.kr4-icon {
     text-align: center;
     width: 1.5rem;
     height: 1.5rem;
@@ -11,13 +19,25 @@
     color: #ffffff;
 }
 
+.ui-icon,
+.gtx-icon { font-family: 'Saira'; }
+
 .kr1-icon { font-size: 0.75rem; }
 .kr2-icon { font-size: 0.5rem; }
 
+.gtx-icon,
 .kr3-icon {
     white-space: pre-line;
     height: 1rem;
     padding: 0.25rem 0;
     font-size: 0.5rem;
+    line-height: 0.5rem;
+}
+
+.kr4-icon {
+    white-space: pre-line;
+    height: 1rem;
+    padding: 0.25rem 0;
+    font-size: 0.375rem;
     line-height: 0.5rem;
 }

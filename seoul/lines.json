@@ -886,7 +886,7 @@
     },
     "GTXA": {
         "st": "GTX-A", "en": "GTX-A", "color": "#945F8C",
-        "icon": ["kr3-icon", "background", "GTX\nA"],
+        "icon": ["gtx-icon", "background", "GTX\nA"],
         "services": {
             "local": [
                 "X101", "X102", "314", "GTXA-01", "321", "133", "219", "349", "K410", "K235",
@@ -912,7 +912,7 @@
     },
     "GTXB": {
         "st": "GTX-B", "en": "GTX-B", "color": "#19ABAE",
-        "icon": ["kr3-icon", "background", "GTX\nB"],
+        "icon": ["gtx-icon", "background", "GTX\nB"],
         "services": {
             "local": [
                 "I136", "GTXB-01", "I124", "152", "752", "140", "526", "135", "133", "124",
@@ -941,7 +941,7 @@
     },
     "GTXC": {
         "st": "GTX-C", "en": "GTX-C", "color": "#E3544E",
-        "icon": ["kr3-icon", "background", "GTX\nC"],
+        "icon": ["gtx-icon", "background", "GTX\nC"],
         "services": {
             "local": [
                 "105", "110", "116", "119", "124", "208", "219", "342", "439", "440",
@@ -972,7 +972,7 @@
     },
     "GTXD": {
         "st": "GTX-D", "en": "GTX-D", "color": "#BD257A",
-        "icon": ["kr3-icon", "background", "GTX\nD"],
+        "icon": ["gtx-icon", "background", "GTX\nD"],
         "services": {
             "local": [
                 "693", "I108", "A06", "GTXD-01", "752", "GTXD-02", "P142", "230", "226", "222",
@@ -1015,7 +1015,7 @@
     },
     "GTXE": {
         "st": "GTX-E", "en": "GTX-E", "color": "#6F4827",
-        "icon": ["kr3-icon", "background", "GTX\nE"],
+        "icon": ["gtx-icon", "background", "GTX\nE"],
         "services": {
             "local": [
                 "A11", "A10", "A09", "GTXD-03", "L7-11", "I211", "I116", "GTXD-01", "909", "618",
@@ -1045,7 +1045,7 @@
     },
     "GTXF": {
         "st": "GTX-F", "en": "GTX-F", "color": "#379D44",
-        "icon": ["kr3-icon", "background", "GTX\nF"],
+        "icon": ["gtx-icon", "background", "GTX\nF"],
         "services": {
             "local": [
                 "L9-07", "K126", "L3-04"
@@ -1239,7 +1239,7 @@
     },
     "UI": {
         "st": "우이신설선", "en": "Ui LRT", "color": "#B1BD51",
-        "icon": ["kr1-icon", "background", "UI"],
+        "icon": ["ui-icon", "background", "UI"],
         "services": {
             "local": [
                 "941", "942", "943", "944", "945", "946", "947", "948", "949", "950",
@@ -1598,7 +1598,7 @@
     },
     "BY": {
         "st": "부평연안부두선", "en": "Bupyeong–Yeonanbudu Line", "color": "#6F7E8D",
-        "icon": ["kr3-icon", "background", "부평\n연안"],
+        "icon": ["kr4-icon", "background", "부평\n연안부두"],
         "services": {
             "local": [
                 "152", "BY-01", "BY-02", "BY-03", "BY-04", "BY-05", "BY-06", "BY-07", "BY-08", "BY-09",
@@ -1631,7 +1631,7 @@
     },
     "JY": {
         "st": "제물포연안부두선", "en": "Jemulpo–Yeonanbudu Line", "color": "#6F7E8D",
-        "icon": ["kr3-icon", "background", "제물포\n연안"],
+        "icon": ["kr4-icon", "background", "제물포\n연안부두"],
         "services": {
             "local": [
                 "158", "JY-01", "JY-02", "K270", "JY-03", "JY-04", "BY-18", "BY-19", "BY-20", "BY-21",
