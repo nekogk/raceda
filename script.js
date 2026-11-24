@@ -1,53 +1,61 @@
 const DEBUG = false;
-const city = location.pathname.split("/").filter(Boolean)[0];
+const NS = "http://www.w3.org/2000/svg";
 
+const MOVE_COST = 3;
+const PLATFORM_COST = 5;
+const TRANSFER_COST = 7;
+
+const ROUTE_WIDTH = 7;
+const TRANSFER_WIDTH = 15;
+const TERMINAL_WIDTH = 13;
+const DIM_STRENGTH = 0.2;
+
+const LIVE_TRANSFORM = true;
+const COMMIT_DELAY = 150;
+const ZOOM_STEP = 0.85;
+const DRAG_THRESHOLD = 5;
+
+const city = location.pathname.split("/").filter(Boolean)[0];
 const [stations, lines, mapText] = await Promise.all([
     fetch(`/${city}/stations.json`).then((r) => r.json()),
     fetch(`/${city}/lines.json`).then((r) => r.json()),
     fetch(`/${city}/map.svg`).then((r) => (r.ok ? r.text() : null)).catch(() => null),
 ]);
 
-const result = document.getElementById("result");
-const departureInput = document.getElementById("departure");
-const destinationInput = document.getElementById("destination");
-const suggest = document.getElementById("suggest");
-const panel = document.getElementById("panel");
-const handle = document.getElementById("handle");
+const $ = (id) => document.getElementById(id);
+const result = $("result");
+const departureInput = $("departure");
+const destinationInput = $("destination");
+const suggest = $("suggest");
+const panel = $("panel");
+const handle = $("handle");
+const searchBox = $("search");
+const panelBody = panel.querySelector(":scope > .panel-body") ?? wrapPanelBody();
 
-const panelBody = panel.querySelector(":scope > .panel-body") ?? (() => {
+const mobile = matchMedia("(max-width: 768px)");
+const coarsePointer = matchMedia("(pointer: coarse)");
+const SHEETS = ["peek", "half", "full"];
+let sheet = "peek";
+
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+function svgEl(tag, attrs = {}) {
+    const el = document.createElementNS(NS, tag);
+    for (const key in attrs) el.setAttribute(key, attrs[key]);
+    return el;
+}
+
+function wrapPanelBody() {
     const body = document.createElement("div");
     body.className = "panel-body";
     body.append(...[...panel.childNodes].filter((node) => !node.contains(handle)));
     panel.append(body);
     return body;
-})();
-
-const mobile = matchMedia("(max-width: 768px)");
-const coarsePointer = matchMedia("(pointer: coarse)");
-const sheets = ["peek", "half", "full"];
-let sheet = "peek";
-let start = null;
-
-const moveCost = 3;
-const platformCost = 5;
-const transferCost = 7;
-const routhWidth = 7;
-const transferWidth = 15;
-const terminalWidth = 13;
-const dimStrength = 0.2;
-
-let suggestInput = null;
-let suggestIndex = -1;
-
-const NS = "http://www.w3.org/2000/svg";
-
-function hasOneway(line, service) {
-    return lines[line].oneway?.[service] !== undefined;
 }
 
-function stateKey(station, line, service, index) {
-    return hasOneway(line, service) ? `${station}|${line}|${service}|${index}` : `${station}|${line}|${service}`;
-}
+const hasOneway = (line, service) => lines[line].oneway?.[service] !== undefined;
+const stateKey = (station, line, service, i) =>
+    hasOneway(line, service) ? `${station}|${line}|${service}|${i}` : `${station}|${line}|${service}`;
 
 const occurrences = new Map();
 for (const [line, { services }] of Object.entries(lines)) {
@@ -60,117 +68,16 @@ for (const [line, { services }] of Object.entries(lines)) {
     }
 }
 
-const searchables = setSearch();
-closeSuggest();
-if (DEBUG) checkMissingStations();
-setSheet("peek");
-
-function offsetWithin(el, ancestor) {
-    let y = 0;
-    for (let node = el; node && node !== ancestor; node = node.offsetParent) y += node.offsetTop;
-    return y;
-}
-
-function sheetOffsets() {
-    const height = panel.offsetHeight;
-    const search = document.getElementById("search");
-    const peek = Math.max(0, height - (offsetWithin(search, panel) + search.offsetHeight + 16));
-    const half = Math.min(peek, Math.max(0, height - innerHeight * 0.5));
-    return { peek, half, full: 0 };
-}
-
-function setSheet(state = sheet) {
-    sheet = state;
-    panel.classList.toggle("full", sheet === "full");
-    panel.style.transform = mobile.matches ? `translateY(${sheetOffsets()[sheet]}px)` : "";
-    if (mobile.matches && sheet !== "full") panelBody.scrollTop = 0;
-}
-
-function stationLabel(id) {
-    const { st, en } = stations[id] ?? {};
-    return [st, en].filter(Boolean).join(" ") || id;
-}
-
-function setStation(input, id) {
-    input.value = id ? stationLabel(id) : "";
-    input.dataset.id = id ?? "";
-}
-
-function setSearch() {
-    const search = [];
-
-    for (const input of [departureInput, destinationInput]) {
-        input.autocomplete = "off";
-        input.addEventListener("input", () => {
-            input.dataset.id = "";
-            openSuggest(input);
-        });
-        input.addEventListener("focus", () => {
-            if (mobile.matches) setSheet("full");
-            openSuggest(input);
-        });
-
-        input.addEventListener("blur", () => setTimeout(() => {
-            if (suggestInput === input && document.activeElement !== input) closeSuggest();
-        }, 200));
-        input.addEventListener("keydown", (event) => {
-            if (suggestInput !== input) return;
-            if (event.key === "ArrowDown") moveSuggest(1);
-            else if (event.key === "ArrowUp") moveSuggest(-1);
-            else if (event.key === "Enter" && suggestIndex >= 0) {
-                chooseSuggest(input, suggest.querySelectorAll("li[data-id]")[suggestIndex].dataset.id);
-            } else if (event.key === "Escape") closeSuggest();
-            else return;
-            event.preventDefault();
-        });
-    }
-
-    suggest.addEventListener("click", (event) => {
-        const li = event.target.closest("li[data-id]");
-        if (li && suggestInput) chooseSuggest(suggestInput, li.dataset.id);
-    });
-
-    for (const id of Object.keys(stations)) {
-        if (!occurrences.has(id)) continue;
-        const { st, en } = stations[id];
-        const named = Boolean(st || en);
-        const keys = (named ? [st, en] : [id]).filter(Boolean).map((key) => String(key).toLowerCase());
-        search.push({ id, label: stationLabel(id), keys });
-    }
-    return search;
-}
-
-function checkMissingStations() {
-    const missing = new Map();
-    for (const [lineId, lineData] of Object.entries(lines)) {
-        for (const [serviceId, serviceData] of Object.entries(lineData.services)) {
-            for (const id of serviceData) {
-                if (Object.hasOwn(stations, id)) continue;
-                if (!missing.has(id)) missing.set(id, []);
-                missing.get(id).push(`${lineId}.${serviceId}`);
-            }
-        }
-    }
-    for (const [id, data] of missing) console.warn(`역 정보 없음: ${id} (${[...new Set(data)].join(", ")})`);
-}
-
 function segmentCost(line, service, prev, next) {
-    const loop = lines[line].loop;
-    const raw = lines[line].distances?.[next] - lines[line].distances?.[prev];
+    const { loop, distances, velocities, dwells } = lines[line];
+    const raw = distances?.[next] - distances?.[prev];
     const distance = loop && raw < 0 ? loop + raw : raw;
-    const velocity = lines[line].velocities?.[service] ?? 1;
-    const dwell = lines[line].dwells?.[service] ?? 1;
 
-    if (Number.isNaN(distance)) {
-        if (DEBUG) console.warn(`거리 정보 없음: ${line} ${service} ${prev} → ${next}`);
-        return moveCost;
+    if (Number.isNaN(distance) || distance <= 0) {
+        if (DEBUG) console.warn(`${Number.isNaN(distance) ? "거리 정보 없음" : "거리가 음수임"}: ${line} ${service} ${prev} → ${next}`);
+        return MOVE_COST;
     }
-    if (distance <= 0) {
-        if (DEBUG) console.warn(`거리가 음수임: ${line} ${service} ${prev} → ${next}`);
-        return moveCost;
-    }
-
-    return distance / velocity + dwell;
+    return distance / (velocities?.[service] ?? 1) + (dwells?.[service] ?? 1);
 }
 
 function blockedBackward(line, service, i) {
@@ -178,7 +85,6 @@ function blockedBackward(line, service, i) {
 }
 
 const neighborCache = new Map();
-
 function getNeighbors(key) {
     const cached = neighborCache.get(key);
     if (cached) return cached;
@@ -189,8 +95,7 @@ function getNeighbors(key) {
     const neighbors = new Map();
 
     for (const o of here) {
-        if (o.key === key) continue;
-        neighbors.set(o.key, o.line === line ? platformCost : transferCost);
+        if (o.key !== key) neighbors.set(o.key, o.line === line ? PLATFORM_COST : TRANSFER_COST);
     }
 
     const indexes = at === undefined
@@ -212,35 +117,36 @@ function getNeighbors(key) {
 
 const heapLess = (x, y) => x[0] < y[0] || (x[0] === y[0] && x[1] < y[1]);
 class MinHeap {
-    constructor() { this.a = []; }
-    get size() { return this.a.length; }
+    #a = [];
+    get size() { return this.#a.length; }
     push(item) {
-        const a = this.a;
+        const a = this.#a;
+        let i = a.length;
         a.push(item);
-        let i = a.length - 1;
         while (i > 0) {
             const p = (i - 1) >> 1;
-            if (!heapLess(a[i], a[p])) break;
-            [a[i], a[p]] = [a[p], a[i]];
+            if (!heapLess(item, a[p])) break;
+            a[i] = a[p];
             i = p;
         }
+        a[i] = item;
     }
     pop() {
-        const a = this.a;
+        const a = this.#a;
         const top = a[0];
         const last = a.pop();
-        if (a.length > 0) {
-            a[0] = last;
+        const n = a.length;
+        if (n > 0) {
             let i = 0;
             for (;;) {
-                const l = 2 * i + 1, r = l + 1;
-                let m = i;
-                if (l < a.length && heapLess(a[l], a[m])) m = l;
-                if (r < a.length && heapLess(a[r], a[m])) m = r;
-                if (m === i) break;
-                [a[i], a[m]] = [a[m], a[i]];
+                let m = 2 * i + 1;
+                if (m >= n) break;
+                if (m + 1 < n && heapLess(a[m + 1], a[m])) m++;
+                if (!heapLess(a[m], last)) break;
+                a[i] = a[m];
                 i = m;
             }
+            a[i] = last;
         }
         return top;
     }
@@ -263,7 +169,6 @@ function getRoute(from, to) {
     while (heap.size > 0) {
         const [d, , cur] = heap.pop();
         if (d > dist.get(cur)) continue;
-
         if (cur.startsWith(target)) return [cur, prev, d];
 
         for (const [next, cost] of getNeighbors(cur)) {
@@ -278,86 +183,145 @@ function getRoute(from, to) {
     }
 }
 
+function stationLabel(id) {
+    const { st, en } = stations[id] ?? {};
+    return [st, en].filter(Boolean).join(" ") || id;
+}
+
+function formatDuration(minutes) {
+    return `Total: ${Math.floor(minutes / 60)}h ${Math.floor(minutes % 60)}m ${Math.floor(minutes * 60 % 60)}s`;
+}
+
+function lineDiagram(lineData, service, count) {
+    const color = lineData.color;
+    const h = 32 * count;
+    const svg = svgEl("svg", { width: "2rem", height: `${2 * count}rem`, viewBox: `0 0 32 ${h}` });
+    svg.append(svgEl("path", { d: `M16 16V${h - 16}`, fill: "none", stroke: color, "stroke-width": 8 }));
+
+    const subcolor = lineData.subcolor?.[service];
+    if (subcolor !== undefined) {
+        svg.append(svgEl("path", {
+            d: `M8 24V${h - 24}`, fill: "none", stroke: subcolor, "stroke-width": 2, "stroke-linecap": "round",
+        }));
+    }
+    for (let j = 0; j < count; j++) {
+        const cy = 32 * j + 16;
+        svg.append(svgEl("circle", j === 0 || j === count - 1
+            ? { cx: 16, cy, r: 6, fill: "white", stroke: color, "stroke-width": 4 }
+            : { cx: 20, cy, r: 4, fill: "white" }));
+    }
+    return svg;
+}
+
+function lineHeader(line) {
+    const lineData = lines[line];
+    const icon = document.createElement("div");
+    const [iconClass, iconMode, iconText = ""] = lineData.icon ?? [];
+    if (iconClass) icon.classList.add(iconClass);
+    if (iconMode === "background") icon.style.backgroundColor = lineData.color;
+    if (iconMode === "outline" || iconMode === "text") icon.style.outlineColor = lineData.color;
+    if (iconMode === "text") icon.style.color = lineData.color;
+    icon.append(iconText);
+
+    const row = document.createElement("div");
+    row.className = "line-row";
+    row.append(icon, `${lineData.st ?? line} ${lineData.en ?? ""}`.trim());
+    return row;
+}
+
 function buildPath(path, dist) {
-    const lineList = document.createElement("div");
-    lineList.append(`Total: ${Math.floor(dist / 60)}h ${Math.floor(dist % 60)}m ${Math.floor(dist * 60 % 60)}s`);
+    const list = document.createElement("div");
+    list.append(formatDuration(dist));
 
     for (let i = 0; i < path.length; i++) {
-        const lineBox = document.createElement("div");
         const stationList = document.createElement("div");
-        const lineIcon = document.createElement("div");
-        const lineRow = document.createElement("div");
-
-        lineBox.classList.add("line-box");
-        lineRow.classList.add("line-row");
-
         for (; i < path.length; i++) {
-            const stationRow = document.createElement("text");
-            stationRow.classList.add("station-row");
-            stationRow.append(`${stations[path[i][0]].st ?? path[i][0]} ${stations[path[i][0]].en ?? ""}`.trim());
-            stationList.append(stationRow);
+            const row = document.createElement("span");
+            row.className = "station-row";
+            row.textContent = stationLabel(path[i][0]);
+            stationList.append(row);
             if (i === path.length - 1 || path[i][0] === path[i + 1][0]) break;
         }
 
-        const stationCount = stationList.childElementCount;
-        const lineData = lines[path[i][1]];
-        const lineColor = lineData.color;
-        const svgElement = document.createElementNS(NS, "svg");
-        svgElement.setAttribute("width", "2rem");
-        svgElement.setAttribute("height", `${2 * stationCount}rem`);
-        svgElement.setAttribute("viewBox", `0 0 32 ${32 * stationCount}`);
+        const [, line, service] = path[i];
+        const box = document.createElement("div");
+        box.className = "line-box";
+        box.append(lineDiagram(lines[line], service, stationList.childElementCount), stationList);
+        list.append(lineHeader(line), box);
+    }
+    return list;
+}
 
-        const lineElement = document.createElementNS(NS, "path");
-        lineElement.setAttribute("d", `M 16 16 16 ${32 * stationCount - 16}`);
-        lineElement.setAttribute("fill", "none");
-        lineElement.setAttribute("stroke", lineColor);
-        lineElement.setAttribute("stroke-width", 8);
-        svgElement.append(lineElement);
+let suggestInput = null;
+let suggestIndex = -1;
 
-        const subcolor = lineData.subcolor?.[path[i][2]];
-        if (subcolor !== undefined) {
-            const serviceElement = document.createElementNS(NS, "path");
-            serviceElement.setAttribute("d", `M 8 24 8 ${32 * stationCount - 24}`);
-            serviceElement.setAttribute("fill", "none");
-            serviceElement.setAttribute("stroke", subcolor);
-            serviceElement.setAttribute("stroke-width", 2);
-            serviceElement.setAttribute("stroke-linecap", "round");
-            svgElement.append(serviceElement);
-        }
+const searchables = setupSearch();
+closeSuggest();
+setSheet("peek");
+if (DEBUG) checkMissingStations();
 
-        for (let j = 0; j < stationCount; j++) {
-            const stationElement = document.createElementNS(NS, "circle");
-            stationElement.setAttribute("cy", 32 * j + 16);
-            stationElement.setAttribute("fill", "white");
-
-            if (j === 0 || j === stationCount - 1) {
-                stationElement.setAttribute("cx", 16);
-                stationElement.setAttribute("stroke", lineColor);
-                stationElement.setAttribute("r", 6);
-                stationElement.setAttribute("stroke-width", 4);
-            } else {
-                stationElement.setAttribute("cx", 20);
-                stationElement.setAttribute("r", 4);
+function setupSearch() {
+    for (const input of [departureInput, destinationInput]) {
+        input.autocomplete = "off";
+        input.addEventListener("input", () => {
+            input.dataset.id = "";
+            openSuggest(input);
+        });
+        input.addEventListener("focus", () => {
+            if (mobile.matches) setSheet("full");
+            openSuggest(input);
+        });
+        input.addEventListener("blur", () => setTimeout(() => {
+            if (suggestInput === input && document.activeElement !== input) closeSuggest();
+        }, 200));
+        input.addEventListener("keydown", (e) => {
+            if (suggestInput !== input) return;
+            switch (e.key) {
+                case "ArrowDown": moveSuggest(1); break;
+                case "ArrowUp": moveSuggest(-1); break;
+                case "Escape": closeSuggest(); break;
+                case "Enter":
+                    if (suggestIndex < 0) return;
+                    chooseSuggest(input, suggest.querySelectorAll("li[data-id]")[suggestIndex].dataset.id);
+                    break;
+                default: return;
             }
-            svgElement.append(stationElement);
-        }
-
-        const [iconClass, iconMode, iconText] = lineData.icon;
-        lineIcon.classList.add(iconClass);
-        if (iconMode === "background") lineIcon.style.backgroundColor = lineColor;
-        if (iconMode === "outline") lineIcon.style.outlineColor = lineColor;
-        if (iconMode === "text") {
-            lineIcon.style.outlineColor = lineColor;
-            lineIcon.style.color = lineColor;
-        }
-
-        lineIcon.append(iconText);
-        lineRow.append(lineIcon, `${lineData.st ?? path[i][1]} ${lineData.en ?? ""}`.trim());
-        lineBox.append(svgElement, stationList);
-        lineList.append(lineRow, lineBox);
+            e.preventDefault();
+        });
     }
 
-    return lineList;
+    suggest.addEventListener("click", (e) => {
+        const li = e.target.closest("li[data-id]");
+        if (li && suggestInput) chooseSuggest(suggestInput, li.dataset.id);
+    });
+
+    const list = [];
+    for (const id of Object.keys(stations)) {
+        if (!occurrences.has(id)) continue;
+        const { st, en } = stations[id];
+        const keys = (st || en ? [st, en] : [id]).filter(Boolean).map((k) => String(k).toLowerCase());
+        list.push({ id, label: stationLabel(id), keys });
+    }
+    return list;
+}
+
+function checkMissingStations() {
+    const missing = new Map();
+    for (const [lineId, { services }] of Object.entries(lines)) {
+        for (const [serviceId, stops] of Object.entries(services)) {
+            for (const id of stops) {
+                if (Object.hasOwn(stations, id)) continue;
+                if (!missing.has(id)) missing.set(id, new Set());
+                missing.get(id).add(`${lineId}.${serviceId}`);
+            }
+        }
+    }
+    for (const [id, where] of missing) console.warn(`역 정보 없음: ${id} (${[...where].join(", ")})`);
+}
+
+function setStation(input, id) {
+    input.value = id ? stationLabel(id) : "";
+    input.dataset.id = id ?? "";
 }
 
 function closeSuggest() {
@@ -383,28 +347,27 @@ function openSuggest(input) {
         else if (item.keys.some((key) => key.includes(query))) contains.push(item);
     }
 
-    const fragment = document.createDocumentFragment();
-    for (const list of [starts, contains]) {
-        for (const { id, label } of list) {
-            const li = document.createElement("li");
-            li.textContent = label;
-            li.dataset.id = id;
-            fragment.append(li);
-        }
-    }
-    if (starts.length + contains.length === 0) {
+    const items = [...starts, ...contains].map(({ id, label }) => {
+        const li = document.createElement("li");
+        li.textContent = label;
+        li.dataset.id = id;
+        return li;
+    });
+    if (items.length === 0) {
         const li = document.createElement("li");
         li.className = "empty";
         li.textContent = "No results";
-        fragment.append(li);
+        items.push(li);
     }
-    suggest.replaceChildren(fragment);
+    suggest.replaceChildren(...items);
 
     suggestInput = input;
     suggestIndex = -1;
-    suggest.style.top = `${input.offsetTop + input.offsetHeight}px`;
-    suggest.style.left = `${input.offsetLeft}px`;
-    suggest.style.width = `${input.offsetWidth}px`;
+    Object.assign(suggest.style, {
+        top: `${input.offsetTop + input.offsetHeight}px`,
+        left: `${input.offsetLeft}px`,
+        width: `${input.offsetWidth}px`,
+    });
     suggest.hidden = false;
 }
 
@@ -420,9 +383,10 @@ function moveSuggest(step) {
 function showRoute(departure, destination) {
     setStation(departureInput, departure);
     setStation(destinationInput, destination);
-    const route = getRoute(departure, destination);
     markStation("departure", departure);
     markStation("destination", destination);
+
+    const route = getRoute(departure, destination);
     if (route === undefined) {
         result.replaceChildren("No route found");
         highlightRoute(null);
@@ -438,27 +402,53 @@ function showRoute(departure, destination) {
     highlightRoute(path);
 }
 
+function offsetWithin(el, ancestor) {
+    let y = 0;
+    for (let node = el; node && node !== ancestor; node = node.offsetParent) y += node.offsetTop;
+    return y;
+}
+
+function sheetOffsets() {
+    const height = panel.offsetHeight;
+    const peek = Math.max(0, height - (offsetWithin(searchBox, panel) + searchBox.offsetHeight + 16));
+    const half = Math.min(peek, Math.max(0, height - innerHeight * 0.5));
+    return { peek, half, full: 0 };
+}
+
+function setSheet(state = sheet) {
+    sheet = state;
+    panel.classList.toggle("full", sheet === "full");
+    panel.style.transform = mobile.matches ? `translateY(${sheetOffsets()[sheet]}px)` : "";
+    if (mobile.matches && sheet !== "full") panelBody.scrollTop = 0;
+}
+
 let highlightRoute = () => {};
 let markStation = () => {};
 
 if (mapText !== null) setupMap(new DOMParser().parseFromString(mapText, "image/svg+xml").documentElement);
-else document.getElementById("map").hidden = true;
+else $("map").hidden = true;
 
 function setupMap(svg) {
+    const mapEl = $("map");
     const [mapX, mapY, mapW, mapH] = svg.getAttribute("viewBox").split(/[\s,]+/).map(Number);
-    document.getElementById("map").append(svg);
+    mapEl.append(svg);
+    if (getComputedStyle(mapEl).overflow === "visible") mapEl.style.overflow = "hidden";
+    svg.style.transformOrigin = "0 0";
 
-    const layer = (id) => svg.querySelector(`:scope > #${id}`) ?? document.createElementNS(NS, "g");
+    const layer = (id) => {
+        let g = svg.querySelector(`:scope > #${id}`);
+        if (!g) svg.append((g = svgEl("g")));
+        return g;
+    };
     const lineLayer = layer("line"), legend = layer("legend"), textLayer = layer("text"), etc = layer("etc");
-
-    const defs = document.createElementNS(NS, "defs");
-    const routed = document.createElementNS(NS, "g");
-    const bridges = document.createElementNS(NS, "g");
-    const markLayer = document.createElementNS(NS, "g");
+    const defs = svgEl("defs");
+    const routed = svgEl("g");
+    const bridges = svgEl("g");
+    const boxLayer = svgEl("g");
+    const markLayer = svgEl("g");
 
     lineLayer.before(routed);
     bridges.append(...etc.querySelectorAll(":scope > path, :scope > line"));
-    const boxLayer = document.createElementNS(NS, "g");
     boxLayer.append(...etc.querySelectorAll(":scope > rect"));
     routed.append(lineLayer, layer("transfer"), layer("station"), bridges);
     legend.before(boxLayer);
@@ -470,37 +460,43 @@ function setupMap(svg) {
     });
 
     const platformsOf = new Map();
-    const px = [], py = [], pid = [];
+    const platforms = [];
     for (const lineData of Object.values(lines)) {
-        const all = [lineData.positions ?? {}, ...Object.values(lineData.servicePositions ?? {})];
-        for (const positions of all) {
+        for (const positions of [lineData.positions ?? {}, ...Object.values(lineData.servicePositions ?? {})]) {
             for (const [id, [x, y]] of Object.entries(positions)) {
-                px.push(x); py.push(y); pid.push(id);
+                platforms.push([x, y, id]);
                 if (!platformsOf.has(id)) platformsOf.set(id, []);
                 platformsOf.get(id).push([x, y]);
             }
         }
     }
 
-    const platformX = Float64Array.from(px);
-    const platformY = Float64Array.from(py);
-    const platformCount = pid.length;
+    const CELL = 32;
+    const cellKey = (cx, cy) => cx * 0x10000 + cy;
+    const grid = new Map();
+    for (const p of platforms) {
+        const key = cellKey(Math.floor(p[0] / CELL), Math.floor(p[1] / CELL));
+        let bucket = grid.get(key);
+        if (!bucket) grid.set(key, (bucket = []));
+        bucket.push(p);
+    }
 
     function pathOf(points) {
         const pts = points.filter((p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]);
         const m = pts.length;
         if (m === 1) return `M${pts[0][0]} ${pts[0][1]}L${pts[0][0]} ${pts[0][1]}`;
+
         const cut = new Array(m).fill(0);
         const turn = new Array(m).fill(0);
         for (let i = 1; i < m - 1; i++) {
-            const n = pts[i][2];
-            if (!n) continue;
+            const radius = pts[i][2];
+            if (!radius) continue;
             const a1 = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]);
             const a2 = Math.atan2(pts[i + 1][1] - pts[i][1], pts[i + 1][0] - pts[i][0]);
             const d = Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1));
             if (Math.abs(d) < 1e-6) continue;
             turn[i] = d;
-            cut[i] = n * Math.tan(Math.abs(d) / 2);
+            cut[i] = radius * Math.tan(Math.abs(d) / 2);
         }
         for (let i = 0; i < m - 1; i++) {
             const length = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
@@ -510,6 +506,7 @@ function setupMap(svg) {
                 cut[i + 1] *= length / need;
             }
         }
+
         const f = (v) => +v.toFixed(2);
         let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
         for (let i = 1; i < m; i++) {
@@ -518,10 +515,10 @@ function setupMap(svg) {
                 d += `L${f(x)} ${f(y)}`;
                 continue;
             }
-            const [ppx, ppy] = pts[i - 1], [nx, ny] = pts[i + 1];
-            const l1 = Math.hypot(x - ppx, y - ppy), l2 = Math.hypot(nx - x, ny - y);
+            const [px, py] = pts[i - 1], [nx, ny] = pts[i + 1];
+            const l1 = Math.hypot(x - px, y - py), l2 = Math.hypot(nx - x, ny - y);
             const r = cut[i] / Math.tan(Math.abs(turn[i]) / 2);
-            d += `L${f(x - (x - ppx) / l1 * cut[i])} ${f(y - (y - ppy) / l1 * cut[i])}`;
+            d += `L${f(x - (x - px) / l1 * cut[i])} ${f(y - (y - py) / l1 * cut[i])}`;
             d += `A${f(r)} ${f(r)} 0 0 ${turn[i] > 0 ? 1 : 0} ${f(x + (nx - x) / l2 * cut[i])} ${f(y + (ny - y) / l2 * cut[i])}`;
         }
         return d;
@@ -551,13 +548,19 @@ function setupMap(svg) {
     }
 
     const view = { x: mapX, y: mapY, w: mapW };
-    let size = { w: svg.clientWidth, h: svg.clientHeight };
+    let shown = { ...view };
+    let shift = null;
+    let size = { w: 0, h: 0 };
     let origin = { left: 0, top: 0 };
     let originDirty = true;
+    let frame = 0, commitTimer = 0, viewBoxText = "";
 
     function measure() {
         const rect = svg.getBoundingClientRect();
-        origin = { left: rect.left + svg.clientLeft, top: rect.top + svg.clientTop };
+        origin = {
+            left: rect.left - (shift?.x ?? 0) + svg.clientLeft,
+            top: rect.top - (shift?.y ?? 0) + svg.clientTop,
+        };
         size = { w: svg.clientWidth, h: svg.clientHeight };
         originDirty = false;
     }
@@ -565,57 +568,78 @@ function setupMap(svg) {
     addEventListener("scroll", markDirty, { passive: true, capture: true });
     addEventListener("resize", markDirty, { passive: true });
 
-    function applyView() {
-        if (size.w === 0) return;
-        svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.w * size.h / size.w}`);
+    function commit() {
+        clearTimeout(commitTimer);
+        cancelAnimationFrame(frame);
+        commitTimer = frame = 0;
+        if (size.w === 0 || size.h === 0) return;
+        const text = `${view.x} ${view.y} ${view.w} ${view.w * size.h / size.w}`;
+        if (text !== viewBoxText) svg.setAttribute("viewBox", (viewBoxText = text));
+        shown = { ...view };
+        if (shift) {
+            shift = null;
+            svg.style.transform = svg.style.willChange = "";
+        }
     }
 
-    let viewFrame = 0;
-    function scheduleView() {
-        if (viewFrame) return;
-        viewFrame = requestAnimationFrame(() => {
-            viewFrame = 0;
-            applyView();
-        });
+    function renderLive() {
+        frame = 0;
+        const s = size.w / view.w;
+        shift = { x: (shown.x - view.x) * s, y: (shown.y - view.y) * s };
+        svg.style.willChange = "transform";
+        svg.style.transform = `translate(${shift.x}px, ${shift.y}px) scale(${shown.w / view.w})`;
     }
 
-    const ratio = size.w / size.h;
+    function moveView() {
+        if (!LIVE_TRANSFORM) {
+            if (!frame) frame = requestAnimationFrame(() => { frame = 0; commit(); });
+            return;
+        }
+        if (!frame) frame = requestAnimationFrame(renderLive);
+        clearTimeout(commitTimer);
+        commitTimer = setTimeout(commit, COMMIT_DELAY);
+    }
+
+    measure();
+    const ratio = size.w / size.h || mapW / mapH;
     view.w = Math.max(mapW, mapH * ratio);
     view.x = mapX + (mapW - view.w) / 2;
     view.y = mapY + (mapH - view.w / ratio) / 2;
-
-    if (mobile.matches) view.y += (innerHeight - panel.getBoundingClientRect().top) / 2 * view.w / size.w;
-    applyView();
-    new ResizeObserver(() => {
-        measure();
-        applyView();
-    }).observe(svg);
+    if (mobile.matches && size.w) view.y += (innerHeight - panel.getBoundingClientRect().top) / 2 * view.w / size.w;
+    commit();
+    new ResizeObserver(() => { measure(); commit(); }).observe(svg);
 
     function toMapPoint({ clientX, clientY }) {
         if (originDirty) measure();
-        const scale = view.w / size.w;
-        return { x: view.x + (clientX - origin.left) * scale, y: view.y + (clientY - origin.top) * scale };
+        const s = view.w / size.w;
+        return { x: view.x + (clientX - origin.left) * s, y: view.y + (clientY - origin.top) * s };
     }
 
-    const clampW = (w) => Math.min(mapW * 2, Math.max(mapW / 24, w));
+    const clampW = (w) => clamp(w, mapW / 24, mapW * 2);
 
-    svg.addEventListener("wheel", (e) => {
-        e.preventDefault();
-        const p = toMapPoint(e);
-        const w = clampW(view.w * (e.deltaY < 0 ? 0.85 : 1 / 0.85));
+    function zoomAt(p, factor) {
+        const w = clampW(view.w * factor);
         const r = w / view.w;
         view.x = p.x - (p.x - view.x) * r;
         view.y = p.y - (p.y - view.y) * r;
         view.w = w;
-        scheduleView();
+        moveView();
+    }
+
+    svg.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        if (e.deltaY === 0) return;
+        let delta = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 100 : 1);
+        if (e.ctrlKey) delta *= 4;
+        zoomAt(toMapPoint(e), ZOOM_STEP ** (-clamp(delta, -300, 300) / 100));
     }, { passive: false });
 
     const pointers = new Map();
-    const middle = () => {
-        const [a, b] = [...pointers.values()];
+    let drag = null, pinch = null;
+    const midpoint = () => {
+        const [a, b] = pointers.values();
         return { clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2, dist: Math.hypot(a.x - b.x, a.y - b.y) };
     };
-    let drag = null, pinch = null;
 
     svg.addEventListener("pointerdown", (e) => {
         svg.setPointerCapture(e.pointerId);
@@ -624,7 +648,7 @@ function setupMap(svg) {
         if (pointers.size === 1) {
             drag = { start: toMapPoint(e), x: e.clientX, y: e.clientY, moved: false };
         } else if (pointers.size === 2) {
-            const m = middle();
+            const m = midpoint();
             pinch = { dist: m.dist, w: view.w, anchor: toMapPoint(m) };
             if (drag) drag.moved = true;
         }
@@ -645,13 +669,14 @@ function setupMap(svg) {
             return;
         }
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
         if (pinch && pointers.size >= 2) {
-            const m = middle();
+            const m = midpoint();
             view.w = clampW(pinch.w * pinch.dist / Math.max(1, m.dist));
             const now = toMapPoint(m);
             view.x += pinch.anchor.x - now.x;
             view.y += pinch.anchor.y - now.y;
-            scheduleView();
+            moveView();
             return;
         }
         if (!drag) return;
@@ -660,56 +685,69 @@ function setupMap(svg) {
         const p = toMapPoint(e);
         view.x -= p.x - drag.start.x;
         view.y -= p.y - drag.start.y;
-        scheduleView();
+        moveView();
     });
+
     const release = (e) => {
-        pointers.delete(e.pointerId);
+        if (!pointers.delete(e.pointerId)) return;
         if (pointers.size < 2) pinch = null;
         if (pointers.size === 1) {
             const [p] = pointers.values();
             drag = { start: toMapPoint({ clientX: p.x, clientY: p.y }), x: p.x, y: p.y, moved: true };
+        } else if (pointers.size === 0) {
+            commit();
         }
     };
     svg.addEventListener("pointerup", release);
     svg.addEventListener("pointercancel", release);
 
-    function nearestStation(p) {
-        const reach = coarsePointer.matches ? 22 : 12;
-        const limit = Math.max(8, reach * view.w / size.w);
-        let best = -1, bestSq = limit * limit;
-        for (let i = 0; i < platformCount; i++) {
-            const dx = platformX[i] - p.x, dy = platformY[i] - p.y;
-            const d = dx * dx + dy * dy;
-            if (d < bestSq) { best = i; bestSq = d; }
+    function nearestStation({ x, y }) {
+        const reach = (coarsePointer.matches ? 22 : 12) * view.w / size.w;
+        const limit = Math.max(8, reach);
+        let best = null, bestSq = limit * limit;
+        const test = ([px, py, id]) => {
+            const d = (px - x) ** 2 + (py - y) ** 2;
+            if (d < bestSq) { best = id; bestSq = d; }
+        };
+
+        const x0 = Math.floor((x - limit) / CELL), x1 = Math.floor((x + limit) / CELL);
+        const y0 = Math.floor((y - limit) / CELL), y1 = Math.floor((y + limit) / CELL);
+        if ((x1 - x0 + 1) * (y1 - y0 + 1) > grid.size) {
+            platforms.forEach(test);
+        } else {
+            for (let cx = x0; cx <= x1; cx++) {
+                for (let cy = y0; cy <= y1; cy++) grid.get(cellKey(cx, cy))?.forEach(test);
+            }
         }
-        return best < 0 ? null : pid[best];
+        return best;
     }
 
     let picking = "departure";
     svg.addEventListener("click", (e) => {
         if (drag?.moved) return;
         const id = nearestStation(toMapPoint(e));
+
         if (id === null) {
-            if (fogShown) {
-                highlightRoute(null);
-                markStation("departure", null);
-                markStation("destination", null);
-                setStation(departureInput, null);
-                setStation(destinationInput, null);
-                result.replaceChildren();
-                picking = "departure";
-            }
+            if (!fogShown) return;
+            highlightRoute(null);
+            markStation("departure", null);
+            markStation("destination", null);
+            setStation(departureInput, null);
+            setStation(destinationInput, null);
+            result.replaceChildren();
+            picking = "departure";
             return;
         }
 
-        setStation(document.getElementById(picking), id);
         if (picking === "departure") {
+            setStation(departureInput, id);
             setStation(destinationInput, null);
             highlightRoute(null);
             markStation("departure", id);
             markStation("destination", null);
             picking = "destination";
         } else {
+            setStation(destinationInput, id);
             showRoute(departureInput.dataset.id, id);
             picking = "departure";
         }
@@ -718,77 +756,107 @@ function setupMap(svg) {
     const marks = {};
     markStation = (kind, id) => {
         marks[kind]?.remove();
+        marks[kind] = null;
         if (!platformsOf.has(id)) return;
-        const mark = document.createElementNS(NS, "path");
-        mark.setAttribute("d", stationShape(id));
-        mark.classList.add("station-mark", kind);
+        const mark = svgEl("path", { d: stationShape(id), class: `station-mark ${kind}` });
         markLayer.append(mark);
         marks[kind] = mark;
     };
 
-    function makeMask(id) {
-        const mask = document.createElementNS(NS, "mask");
-        mask.id = id;
-        mask.setAttribute("maskUnits", "userSpaceOnUse");
-        for (const [key, value] of [["x", mapX], ["y", mapY], ["width", mapW], ["height", mapH]]) mask.setAttribute(key, value);
-        return mask;
-    }
-    function makeRect(x, y, w, h, color) {
-        const rect = document.createElementNS(NS, "rect");
-        for (const [key, value] of [["x", x], ["y", y], ["width", w], ["height", h], ["fill", color]]) rect.setAttribute(key, value);
-        return rect;
-    }
-    function setStroke(element, color, width) {
-        for (const [key, value] of [["fill", "none"], ["stroke", color], ["stroke-width", width]]) element.setAttribute(key, value);
-        return element;
-    }
-    function makeStroke(d, color, width) {
-        const stroke = setStroke(document.createElementNS(NS, "path"), color, width);
-        for (const [key, value] of [["d", d], ["stroke-linecap", "round"], ["stroke-linejoin", "round"]]) stroke.setAttribute(key, value);
-        return stroke;
-    }
-
-    const toRgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
-    const isBody = (element) => {
-        const style = getComputedStyle(element);
-        return style.stroke !== "none" && style.stroke !== "rgb(255, 255, 255)" && style.strokeDasharray === "none";
-    };
-    const makeCover = (element) => {
-        const cover = element.cloneNode(false);
+    const makeStroke = (d, color, width) => svgEl("path", {
+        d, fill: "none", stroke: color, "stroke-width": width, "stroke-linecap": "round", "stroke-linejoin": "round",
+    });
+    const makeCover = (el) => {
+        const cover = el.cloneNode(false);
         cover.removeAttribute("class");
-        return setStroke(cover, "white", routhWidth);
+        for (const [k, v] of [["fill", "none"], ["stroke", "white"], ["stroke-width", ROUTE_WIDTH]]) cover.setAttribute(k, v);
+        return cover;
     };
+    const toRgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
+    const rgbOf = Object.fromEntries(Object.entries(lines).map(([line, { color }]) => [line, toRgb(color)]));
+
+    const strokeBodies = (elements) => [...elements].flatMap((el) => {
+        const s = getComputedStyle(el);
+        return s.stroke !== "none" && s.stroke !== "rgb(255, 255, 255)" && s.strokeDasharray === "none"
+            ? [{ el, stroke: s.stroke, width: parseFloat(s.strokeWidth) || 1 }]
+            : [];
+    });
+
+    function bounds(el, pad, local = false) {
+        const b = el.getBBox();
+        let box = [b.x, b.y, b.x + b.width, b.y + b.height];
+        const list = el.transform?.baseVal;
+        if (!local && list?.numberOfItems) {
+            let m = new DOMMatrix();
+            for (let i = 0; i < list.numberOfItems; i++) m = m.multiply(list.getItem(i).matrix);
+            const pts = [[box[0], box[1]], [box[2], box[1]], [box[0], box[3]], [box[2], box[3]]]
+                .map(([x, y]) => m.transformPoint({ x, y }));
+            const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+            box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+        }
+        return [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad];
+    }
+    function pointsBox(points, pad) {
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+        for (const [x, y] of points) {
+            if (x < x1) x1 = x;
+            if (y < y1) y1 = y;
+            if (x > x2) x2 = x;
+            if (y > y2) y2 = y;
+        }
+        return [x1 - pad, y1 - pad, x2 + pad, y2 + pad];
+    }
+    const overlaps = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+    const inBox = (b, x, y) => b[0] <= x && x <= b[2] && b[1] <= y && y <= b[3];
+
+    const COVER_PAD = ROUTE_WIDTH * 2 + 1;
+
     const lineGroups = [...lineLayer.children].map((group) => {
-        const bodies = [...group.querySelectorAll("path, line, circle, polyline")].filter(isBody);
-        const style = bodies.length > 0 ? getComputedStyle(bodies[0]) : null;
-        return { color: style?.stroke, bodies, covers: bodies.map(makeCover) };
+        const bodies = strokeBodies(group.querySelectorAll("path, line, circle, polyline"));
+        return {
+            color: bodies[0]?.stroke,
+            bodies: bodies.map(({ el, width }) => ({ el, hit: bounds(el, width / 2 + 1, true) })),
+            covers: bodies.map(({ el }) => ({ el: makeCover(el), box: bounds(el, COVER_PAD) })),
+        };
     });
 
     const groupOf = {};
     for (const [line, lineData] of Object.entries(lines)) {
-        const color = toRgb(lineData.color);
-        const points = Object.values(lineData.positions ?? {}).map(([x, y]) => new DOMPoint(x, y));
+        const points = Object.values(lineData.positions ?? {}).map(([x, y]) => [x, y, new DOMPoint(x, y)]);
         let best = -1, bestCount = -1;
         lineGroups.forEach((group, i) => {
-            if (group.color !== color) return;
+            if (group.color !== rgbOf[line]) return;
             let count = 0;
-            for (const p of points) if (group.bodies.some((body) => body.isPointInStroke(p))) count++;
+            for (const [x, y, p] of points) {
+                if (group.bodies.some(({ el, hit }) => inBox(hit, x, y) && el.isPointInStroke(p))) count++;
+            }
             if (count > bestCount) { best = i; bestCount = count; }
         });
         groupOf[line] = best;
     }
 
-    const bridgeCovers = [...bridges.children].filter(isBody).map((element) => {
-        const mid = element.getPointAtLength(element.getTotalLength() / 2);
-        return { color: getComputedStyle(element).stroke, middle: [mid.x, mid.y], cover: makeCover(element) };
+    const bridgeCovers = strokeBodies(bridges.children).map(({ el, stroke }) => {
+        const mid = el.getPointAtLength(el.getTotalLength() / 2);
+        return { color: stroke, middle: [mid.x, mid.y], cover: makeCover(el), box: bounds(el, COVER_PAD) };
     });
+
+    const terminals = new Set();
+    for (const { services, loop } of Object.values(lines)) {
+        if (loop) continue;
+        const ends = new Set(), middles = new Set();
+        for (const stops of Object.values(services)) {
+            stops.forEach((station, i) => (i === 0 || i === stops.length - 1 ? ends : middles).add(station));
+        }
+        for (const station of ends) if (!middles.has(station)) terminals.add(station);
+    }
 
     function edgePoints(line, service, a, b) {
         const lineData = lines[line];
         const position = (id) => lineData.servicePositions?.[service]?.[id] ?? lineData.positions?.[id];
-        if (!position(a) || !position(b)) return [];
+        const pa = position(a), pb = position(b);
+        if (!pa || !pb) return [];
         const bends = lineData.bends?.[`${a}|${b}`] ?? [...(lineData.bends?.[`${b}|${a}`] ?? [])].reverse();
-        return [position(a), ...bends, position(b)];
+        return [pa, ...bends, pb];
     }
 
     function stopsByIndex(line, service, i, j) {
@@ -799,13 +867,17 @@ function setupMap(svg) {
     function stopsBetween(line, a, b) {
         let best = [a, b];
         for (const stops of Object.values(lines[line].services)) {
-            let range = null;
+            const as = [], bs = [];
             stops.forEach((s, i) => {
-                if (s !== a) return;
-                stops.forEach((t, j) => {
-                    if (t === b && (range === null || Math.abs(i - j) < Math.abs(range[0] - range[1]))) range = [i, j];
-                });
+                if (s === a) as.push(i);
+                if (s === b) bs.push(i);
             });
+            let range = null;
+            for (const i of as) {
+                for (const j of bs) {
+                    if (range === null || Math.abs(i - j) < Math.abs(range[0] - range[1])) range = [i, j];
+                }
+            }
             if (range === null) continue;
             const [i, j] = range;
             const part = i < j ? stops.slice(i, j + 1) : stops.slice(j, i + 1).reverse();
@@ -819,29 +891,26 @@ function setupMap(svg) {
         for (let i = 1; i < points.length; i++) {
             const [x1, y1] = points[i - 1], [x2, y2] = points[i];
             const dx = x2 - x1, dy = y2 - y1;
-            const t = Math.min(1, Math.max(0, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy || 1)));
+            const t = clamp(((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy || 1), 0, 1);
             best = Math.min(best, Math.hypot(x - x1 - t * dx, y - y1 - t * dy));
         }
         return best;
     }
 
-    const fogMask = makeMask("fog-mask");
-    const bgFogMask = makeMask("bg-fog-mask");
-    const makeFog = (maskId) => {
-        const fogRect = makeRect(mapX, mapY, mapW, mapH, "white");
-        fogRect.setAttribute("fill-opacity", 1 - dimStrength);
-        fogRect.setAttribute("mask", `url(#${maskId})`);
-        fogRect.style.pointerEvents = "none";
-        return fogRect;
-    };
-    const fog = makeFog("fog-mask");
-    const bgFog = makeFog("bg-fog-mask");
+    const fogMask = svgEl("mask", {
+        id: "fog-mask", maskUnits: "userSpaceOnUse", x: mapX, y: mapY, width: mapW, height: mapH,
+    });
+    const fog = svgEl("rect", {
+        x: mapX, y: mapY, width: mapW, height: mapH,
+        fill: "white", "fill-opacity": 1 - DIM_STRENGTH, mask: "url(#fog-mask)", "pointer-events": "none",
+    });
+    const bgFog = svgEl("g", { opacity: 1 - DIM_STRENGTH, "pointer-events": "none" });
+    defs.append(fogMask);
 
     let fogShown = false;
     function showFog() {
         if (fogShown) return;
         fogShown = true;
-        defs.append(fogMask, bgFogMask);
         routed.after(fog);
         routed.before(bgFog);
     }
@@ -851,30 +920,17 @@ function setupMap(svg) {
         fog.remove();
         bgFog.remove();
         fogMask.replaceChildren();
-        bgFogMask.replaceChildren();
-        fogMask.remove();
-        bgFogMask.remove();
+        bgFog.replaceChildren();
     }
 
-    const clearOpacity = (element) => {
-        element.style.removeProperty("opacity");
-        if (element.getAttribute("style") === "") element.removeAttribute("style");
+    const clearOpacity = (el) => {
+        el.style.removeProperty("opacity");
+        if (el.getAttribute("style") === "") el.removeAttribute("style");
     };
-
-    const terminals = new Set();
-    for (const { services, loop } of Object.values(lines)) {
-        if (loop) continue;
-        const ends = new Set(), middles = new Set();
-        for (const stops of Object.values(services)) {
-            stops.forEach((station, i) => (i === 0 || i === stops.length - 1 ? ends : middles).add(station));
-        }
-        for (const station of ends) if (!middles.has(station)) terminals.add(station);
-    }
-
     const setLabelDim = (label, dim) => {
         if (label.dimmed === dim) return;
         label.dimmed = dim;
-        if (dim) label.element.style.opacity = dimStrength;
+        if (dim) label.element.style.opacity = DIM_STRENGTH;
         else clearOpacity(label.element);
     };
 
@@ -887,155 +943,156 @@ function setupMap(svg) {
         }
 
         const rides = new Map();
-        const passedStations = new Set(path.map(([station]) => station));
+        const passed = new Set(path.map(([station]) => station));
         for (let i = 1; i < path.length; i++) {
-            const [a, line, service] = path[i - 1];
-            const [b, nextLine, nextService] = path[i];
+            const [a, line, service, ai] = path[i - 1];
+            const [b, nextLine, nextService, bi] = path[i];
             if (line !== nextLine || service !== nextService || a === b) continue;
-            const passed = path[i][3] !== undefined
-                ? stopsByIndex(line, service, Number(path[i - 1][3]), Number(path[i][3]))
-                : stopsBetween(line, a, b);
-            for (const station of passed) passedStations.add(station);
-            const points = [];
-            for (let j = 1; j < passed.length; j++) points.push(...edgePoints(line, service, passed[j - 1], passed[j]));
-            if (points.length === 0) continue;
-            if (!rides.has(line)) rides.set(line, []);
-            rides.get(line).push(points);
-        }
-        const clear = [];
-        const addClear = (d, width) => {
-            clear.push([d, width]);
-            return makeStroke(d, "black", width);
-        };
-        const strokesOf = (line) => rides.get(line).map((points) => addClear(pathOf(points), routhWidth));
 
-        const fogContent = document.createDocumentFragment();
-        fogContent.append(makeRect(mapX, mapY, mapW, mapH, "white"));
+            const stops = bi !== undefined ? stopsByIndex(line, service, Number(ai), Number(bi)) : stopsBetween(line, a, b);
+            for (const station of stops) passed.add(station);
+
+            const points = [];
+            for (let j = 1; j < stops.length; j++) points.push(...edgePoints(line, service, stops[j - 1], stops[j]));
+            if (points.length === 0) continue;
+
+            if (!rides.has(line)) rides.set(line, []);
+            rides.get(line).push({ points, d: pathOf(points), box: pointsBox(points, ROUTE_WIDTH) });
+        }
+
+        const mask = [svgEl("rect", { x: mapX, y: mapY, width: mapW, height: mapH, fill: "white" })];
+        const holes = [];
+        const holeBoxes = [];
+        const hole = (d, width, box) => {
+            holes.push(makeStroke(d, "white", width));
+            mask.push(makeStroke(d, "black", width));
+            if (box) holeBoxes.push(box);
+        };
+        const cover = (el, box) => {
+            if (holeBoxes.some((b) => overlaps(b, box))) mask.push(el);
+        };
+
+        const ridesByGroup = new Map();
+        for (const [line, list] of rides) {
+            const g = groupOf[line];
+            if (!ridesByGroup.has(g)) ridesByGroup.set(g, []);
+            ridesByGroup.get(g).push(...list);
+        }
         lineGroups.forEach((group, i) => {
-            fogContent.append(...group.covers);
-            for (const line of rides.keys()) if (groupOf[line] === i) fogContent.append(...strokesOf(line));
+            for (const c of group.covers) cover(c.el, c.box);
+            for (const r of ridesByGroup.get(i) ?? []) hole(r.d, ROUTE_WIDTH, r.box);
         });
-        for (const line of rides.keys()) if (groupOf[line] < 0) fogContent.append(...strokesOf(line));
+        for (const r of ridesByGroup.get(-1) ?? []) hole(r.d, ROUTE_WIDTH, r.box);
 
         for (const bridge of bridgeCovers) {
             const used = [...rides].some(([line, list]) =>
-                toRgb(lines[line].color) === bridge.color && list.some((points) => distanceTo(points, bridge.middle) < 3));
-            if (!used) fogContent.append(bridge.cover);
+                rgbOf[line] === bridge.color && list.some(({ points }) => distanceTo(points, bridge.middle) < 3));
+            if (!used) cover(bridge.cover, bridge.box);
         }
 
-        for (const station of passedStations) {
+        for (const station of passed) {
             const count = platformsOf.get(station)?.length ?? 0;
-            if (count > 1) {
-                fogContent.append(addClear(stationShape(station), transferWidth));
-            } else if (count === 1 && terminals.has(station)) {
-                fogContent.append(addClear(stationShape(station), terminalWidth));
-            }
+            if (count > 1) hole(stationShape(station), TRANSFER_WIDTH);
+            else if (count === 1 && terminals.has(station)) hole(stationShape(station), TERMINAL_WIDTH);
         }
 
-        fogMask.replaceChildren(fogContent);
-        bgFogMask.replaceChildren(...clear.map(([d, width]) => makeStroke(d, "white", width)));
+        fogMask.replaceChildren(...mask);
+        bgFog.replaceChildren(...holes);
         showFog();
 
-        legend.style.opacity = dimStrength;
-
+        legend.style.opacity = DIM_STRENGTH;
         const boxes = path.map(([station]) => stations[station]?.box).filter(Boolean);
         for (const label of labels) {
-            const { x, y } = label;
-            const lit = boxes.some(([x1, y1, x2, y2]) => x1 <= x && x <= x2 && y1 <= y && y <= y2);
+            const lit = boxes.some(([x1, y1, x2, y2]) => x1 <= label.x && label.x <= x2 && y1 <= label.y && label.y <= y2);
             setLabelDim(label, !lit);
         }
     };
 }
 
-let panelFrame = 0, panelOffset = 0;
+let panelDrag = null;
+let panelFrame = 0;
+let panelOffset = 0;
 
-const DRAG_THRESHOLD = 5;
-
-function stopDrag() {
+function endPanelDrag() {
     cancelAnimationFrame(panelFrame);
     panelFrame = 0;
     panel.classList.remove("dragging");
 }
 
-function activateDrag(e) {
-    start.active = true;
+function activatePanelDrag(e) {
+    panelDrag.active = true;
     panel.setPointerCapture(e.pointerId);
     panel.classList.add("dragging");
 }
 
 panel.addEventListener("pointerdown", (e) => {
-    if (!mobile.matches || start) return;
+    if (!mobile.matches || panelDrag) return;
     const fromHandle = handle.contains(e.target);
     if (!fromHandle && sheet === "full") return;
     const offsets = sheetOffsets();
-    start = {
+    panelDrag = {
         id: e.pointerId, y: e.clientY, offsets, offset: offsets[sheet],
-        time: e.timeStamp, last: e.clientY, fromHandle, active: false,
+        lastY: e.clientY, lastTime: e.timeStamp, speed: 0, active: false,
     };
-    if (fromHandle) activateDrag(e);
+    if (fromHandle) activatePanelDrag(e);
 });
 
 panel.addEventListener("pointermove", (e) => {
-    if (!start || e.pointerId !== start.id) return;
-    const moved = e.clientY - start.y;
-    if (!start.active) {
+    const g = panelDrag;
+    if (!g || e.pointerId !== g.id) return;
+    const moved = e.clientY - g.y;
+    if (!g.active) {
         if (Math.abs(moved) < DRAG_THRESHOLD) return;
-        activateDrag(e);
+        activatePanelDrag(e);
     }
-    panelOffset = Math.min(start.offsets.peek, Math.max(0, start.offset + moved));
+    panelOffset = clamp(g.offset + moved, 0, g.offsets.peek);
     if (!panelFrame) {
         panelFrame = requestAnimationFrame(() => {
             panelFrame = 0;
-            if (start) panel.style.transform = `translateY(${panelOffset}px)`;
+            if (panelDrag) panel.style.transform = `translateY(${panelOffset}px)`;
         });
     }
-    start.speed = (e.clientY - start.last) / Math.max(1, e.timeStamp - (start.lastTime ?? start.time));
-    start.last = e.clientY;
-    start.lastTime = e.timeStamp;
+    g.speed = (e.clientY - g.lastY) / Math.max(1, e.timeStamp - g.lastTime);
+    g.lastY = e.clientY;
+    g.lastTime = e.timeStamp;
 });
 
 panel.addEventListener("pointerup", (e) => {
-    if (!start || e.pointerId !== start.id) return;
-    const gesture = start;
-    start = null;
-    stopDrag();
+    const g = panelDrag;
+    if (!g || e.pointerId !== g.id) return;
+    panelDrag = null;
+    endPanelDrag();
+    if (!g.active) return;
 
-    const moved = e.clientY - gesture.y;
-    if (!gesture.active) {
-        if (!gesture.fromHandle) return;
-    }
-
+    const moved = e.clientY - g.y;
     let next;
     if (Math.abs(moved) < DRAG_THRESHOLD) {
         next = sheet === "peek" ? "half" : "peek";
-    } else if (Math.abs(gesture.speed ?? 0) > 0.5) {
-        const i = sheets.indexOf(sheet) + (gesture.speed < 0 ? 1 : -1);
-        next = sheets[Math.min(sheets.length - 1, Math.max(0, i))];
+    } else if (Math.abs(g.speed) > 0.5) {
+        next = SHEETS[clamp(SHEETS.indexOf(sheet) + (g.speed < 0 ? 1 : -1), 0, SHEETS.length - 1)];
     } else {
-        const offsets = gesture.offsets;
-        const offset = Math.min(offsets.peek, Math.max(0, gesture.offset + moved));
-        next = sheets.reduce((a, b) => (Math.abs(offsets[b] - offset) < Math.abs(offsets[a] - offset) ? b : a));
+        const offset = clamp(g.offset + moved, 0, g.offsets.peek);
+        next = SHEETS.reduce((a, b) => (Math.abs(g.offsets[b] - offset) < Math.abs(g.offsets[a] - offset) ? b : a));
     }
     setSheet(next);
 });
 
 panel.addEventListener("pointercancel", (e) => {
-    if (!start || e.pointerId !== start.id) return;
-    start = null;
-    stopDrag();
+    if (!panelDrag || e.pointerId !== panelDrag.id) return;
+    panelDrag = null;
+    endPanelDrag();
     setSheet(sheet);
 });
 
 mobile.addEventListener("change", () => setSheet("peek"));
 
-document.getElementById("random").addEventListener("click", () => {
-    const departure = searchables[Math.floor(Math.random() * searchables.length)].id;
-    const destination = searchables[Math.floor(Math.random() * searchables.length)].id;
-    showRoute(departure, destination);
+$("random").addEventListener("click", () => {
+    const pick = () => searchables[Math.floor(Math.random() * searchables.length)].id;
+    showRoute(pick(), pick());
     if (mobile.matches) setSheet("half");
 });
 
-document.getElementById("search").addEventListener("click", () => {
+searchBox.addEventListener("click", () => {
     const departure = departureInput.dataset.id;
     const destination = destinationInput.dataset.id;
     if (!departure || !destination) {
