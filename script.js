@@ -1,6 +1,7 @@
 const DEBUG = false;
 const city = location.pathname.split("/").filter(Boolean)[0];
 
+// 세 파일을 병렬로 받음 (기존: 순차 요청)
 const [stations, lines, mapText] = await Promise.all([
     fetch(`/${city}/stations.json`).then((r) => r.json()),
     fetch(`/${city}/lines.json`).then((r) => r.json()),
@@ -13,6 +14,17 @@ const destinationInput = document.getElementById("destination");
 const suggest = document.getElementById("suggest");
 const panel = document.getElementById("panel");
 const handle = document.getElementById("handle");
+
+// 손잡이를 뺀 나머지 내용을 별도 스크롤 영역으로 감쌈.
+// 손잡이가 스크롤 컨테이너 밖에 있어야 iOS에서 스크롤·바운스에 끌려가지 않음
+// (HTML에 직접 <div class="panel-body">를 넣어두면 이 부분은 그냥 넘어감)
+const panelBody = panel.querySelector(":scope > .panel-body") ?? (() => {
+    const body = document.createElement("div");
+    body.className = "panel-body";
+    body.append(...[...panel.childNodes].filter((node) => !node.contains(handle)));
+    panel.append(body);
+    return body;
+})();
 
 const mobile = matchMedia("(max-width: 768px)");
 const coarsePointer = matchMedia("(pointer: coarse)");
@@ -33,6 +45,8 @@ let suggestIndex = -1;
 
 const NS = "http://www.w3.org/2000/svg";
 
+/* ---------- 그래프 사전 계산 ---------- */
+
 function hasOneway(line, service) {
     return lines[line].oneway?.[service] !== undefined;
 }
@@ -41,6 +55,8 @@ function stateKey(station, line, service, index) {
     return hasOneway(line, service) ? `${station}|${line}|${service}|${index}` : `${station}|${line}|${service}`;
 }
 
+// 역 ID → 그 역이 등장하는 모든 (노선, 운행계통, 인덱스, 상태 키)
+// 기존엔 이웃을 구할 때마다 전체 노선을 훑었음
 const occurrences = new Map();
 for (const [line, { services }] of Object.entries(lines)) {
     for (const [service, stops] of Object.entries(services)) {
@@ -57,18 +73,26 @@ closeSuggest();
 if (DEBUG) checkMissingStations();
 setSheet("peek");
 
+// el의 위쪽 끝이 ancestor 안에서 몇 px 아래에 있는지 (스크롤과 무관)
+function offsetWithin(el, ancestor) {
+    let y = 0;
+    for (let node = el; node && node !== ancestor; node = node.offsetParent) y += node.offsetTop;
+    return y;
+}
+
 function sheetOffsets() {
     const height = panel.offsetHeight;
     const search = document.getElementById("search");
-    const peek = Math.max(0, height - (search.offsetTop + search.offsetHeight + 16));
+    const peek = Math.max(0, height - (offsetWithin(search, panel) + search.offsetHeight + 16));
     const half = Math.min(peek, Math.max(0, height - innerHeight * 0.5));
     return { peek, half, full: 0 };
 }
 
 function setSheet(state = sheet) {
     sheet = state;
+    panel.classList.toggle("full", sheet === "full");
     panel.style.transform = mobile.matches ? `translateY(${sheetOffsets()[sheet]}px)` : "";
-    if (mobile.matches && sheet !== "full") panel.scrollTop = 0;
+    if (mobile.matches && sheet !== "full") panelBody.scrollTop = 0;
 }
 
 function stationLabel(id) {
@@ -110,6 +134,7 @@ function setSearch() {
         });
     }
 
+    // 항목마다 리스너를 붙이는 대신 위임 하나로 처리
     suggest.addEventListener("click", (event) => {
         const li = event.target.closest("li[data-id]");
         if (li && suggestInput) chooseSuggest(suggestInput, li.dataset.id);
@@ -119,6 +144,7 @@ function setSearch() {
         if (!occurrences.has(id)) continue;
         const { st, en } = stations[id];
         const named = Boolean(st || en);
+        // 소문자 변환을 입력할 때마다 하지 않도록 미리 계산
         const keys = (named ? [st, en] : [id]).filter(Boolean).map((key) => String(key).toLowerCase());
         search.push({ id, label: stationLabel(id), keys });
     }
@@ -162,6 +188,7 @@ function blockedBackward(line, service, i) {
     return (lines[line].oneway?.[service] ?? []).some(([a, b]) => a <= i - 1 && i <= b);
 }
 
+// 그래프는 바뀌지 않으므로 이웃 목록을 한 번 계산한 뒤 캐시
 const neighborCache = new Map();
 
 function getNeighbors(key) {
@@ -195,6 +222,8 @@ function getNeighbors(key) {
     return list;
 }
 
+// 이진 힙 (기존: 매 반복마다 Set을 배열로 복사해서 최솟값을 찾음 → O(V²))
+// 항목: [거리, 삽입 순서, 키]
 const heapLess = (x, y) => x[0] < y[0] || (x[0] === y[0] && x[1] < y[1]);
 class MinHeap {
     constructor() { this.a = []; }
@@ -247,7 +276,7 @@ function getRoute(from, to) {
 
     while (heap.size > 0) {
         const [d, , cur] = heap.pop();
-        if (d > dist.get(cur)) continue;
+        if (d > dist.get(cur)) continue; // 이미 더 짧은 거리로 처리된 낡은 항목
 
         if (cur.startsWith(target)) return [cur, prev, d];
 
@@ -368,6 +397,7 @@ function openSuggest(input) {
         else if (item.keys.some((key) => key.includes(query))) contains.push(item);
     }
 
+    // 한 번에 DOM에 붙임
     const fragment = document.createDocumentFragment();
     for (const list of [starts, contains]) {
         for (const { id, label } of list) {
@@ -414,6 +444,7 @@ function showRoute(departure, destination) {
         return;
     }
 
+    // 경로 복원은 한 번만 해서 목록과 지도 양쪽에 씀
     const [goal, prev, dist] = route;
     const path = [];
     for (let cur = goal; cur !== null; cur = prev.get(cur)) path.push(cur.split("|"));
@@ -466,7 +497,7 @@ function setupMap(svg) {
             }
         }
     }
-
+    // 근접 탐색용 평탄 배열
     const platformX = Float64Array.from(px);
     const platformY = Float64Array.from(py);
     const platformCount = pid.length;
@@ -512,6 +543,7 @@ function setupMap(svg) {
         return d;
     }
 
+    // 역 모양은 바뀌지 않으므로 캐시
     const shapeCache = new Map();
     function stationShape(id) {
         let d = shapeCache.get(id);
@@ -535,6 +567,8 @@ function setupMap(svg) {
         return d;
     }
 
+    /* ---------- 뷰 (팬/줌) ---------- */
+
     const view = { x: mapX, y: mapY, w: mapW };
     let size = { w: svg.clientWidth, h: svg.clientHeight };
     let origin = { left: 0, top: 0 };
@@ -555,6 +589,7 @@ function setupMap(svg) {
         svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.w * size.h / size.w}`);
     }
 
+    // viewBox 변경은 프레임당 한 번만
     let viewFrame = 0;
     function scheduleView() {
         if (viewFrame) return;
@@ -576,6 +611,7 @@ function setupMap(svg) {
         applyView();
     }).observe(svg);
 
+    // getScreenCTM() 대신 현재 view 값으로 직접 계산 (강제 레이아웃 없음)
     function toMapPoint({ clientX, clientY }) {
         if (originDirty) measure();
         const scale = view.w / size.w;
@@ -615,6 +651,7 @@ function setupMap(svg) {
         }
     });
 
+    // 마우스 호버 커서: 프레임당 한 번만 검사, 바뀔 때만 스타일 변경
     let hoverPoint = null, hoverFrame = 0, hoverCursor = "";
     function updateHover() {
         hoverFrame = 0;
@@ -675,7 +712,7 @@ function setupMap(svg) {
         if (drag?.moved) return;
         const id = nearestStation(toMapPoint(e));
         if (id === null) {
-            if (fog.style.display !== "none") {
+            if (fogShown) {
                 highlightRoute(null);
                 markStation("departure", null);
                 markStation("destination", null);
@@ -818,13 +855,28 @@ function setupMap(svg) {
         fogRect.setAttribute("fill-opacity", 1 - dimStrength);
         fogRect.setAttribute("mask", `url(#${maskId})`);
         fogRect.style.pointerEvents = "none";
-        fogRect.style.display = "none";
         return fogRect;
     };
     const fog = makeFog("fog-mask");
     const bgFog = makeFog("bg-fog-mask");
-    routed.after(fog);
-    routed.before(bgFog);
+
+    // 경로가 없을 땐 안개 rect를 DOM에서 빼고 마스크도 비워서
+    // 브라우저가 마스크를 아예 계산하지 않게 함
+    let fogShown = false;
+    function showFog() {
+        if (fogShown) return;
+        fogShown = true;
+        routed.after(fog);
+        routed.before(bgFog);
+    }
+    function hideFog() {
+        if (!fogShown) return;
+        fogShown = false;
+        fog.remove();
+        bgFog.remove();
+        fogMask.replaceChildren();
+        bgFogMask.replaceChildren();
+    }
 
     const terminals = new Set();
     for (const { services, loop } of Object.values(lines)) {
@@ -836,6 +888,7 @@ function setupMap(svg) {
         for (const station of ends) if (!middles.has(station)) terminals.add(station);
     }
 
+    // 바뀐 라벨만 스타일을 건드림
     const setLabelDim = (label, dim) => {
         if (label.dimmed === dim) return;
         label.dimmed = dim;
@@ -844,7 +897,7 @@ function setupMap(svg) {
 
     highlightRoute = (path) => {
         if (path === null) {
-            fog.style.display = bgFog.style.display = "none";
+            hideFog();
             for (const label of labels) setLabelDim(label, false);
             legend.style.opacity = "";
             return;
@@ -873,6 +926,7 @@ function setupMap(svg) {
         };
         const strokesOf = (line) => rides.get(line).map((points) => addClear(pathOf(points), routhWidth));
 
+        // 마스크 내용을 조각에 먼저 모은 뒤 한 번에 교체 (마스크 재계산 1회)
         const fogContent = document.createDocumentFragment();
         fogContent.append(makeRect(mapX, mapY, mapW, mapH, "white"));
         lineGroups.forEach((group, i) => {
@@ -898,7 +952,7 @@ function setupMap(svg) {
 
         fogMask.replaceChildren(fogContent);
         bgFogMask.replaceChildren(...clear.map(([d, width]) => makeStroke(d, "white", width)));
-        fog.style.display = bgFog.style.display = "";
+        showFog();
 
         legend.style.opacity = dimStrength;
 
@@ -911,44 +965,51 @@ function setupMap(svg) {
     };
 }
 
+/* ---------- 모바일 바텀 시트 ---------- */
+
 let panelFrame = 0, panelOffset = 0;
 
-const end = (e) => {
-    if (!start) return;
+// start: 시트 제스처 상태
+//   fromHandle: 손잡이에서 시작했는지 (탭으로 단계 전환은 손잡이에서만)
+//   active: 실제로 시트를 끌기 시작했는지 (5px 이상 움직여야 켜짐)
+const DRAG_THRESHOLD = 5;
+
+function stopDrag() {
     cancelAnimationFrame(panelFrame);
     panelFrame = 0;
     panel.classList.remove("dragging");
-    const moved = e.clientY - start.y;
-    const offsets = start.offsets;
-    let next;
-    if (Math.abs(moved) < 5) {
-        next = sheet === "peek" ? "half" : "peek";
-    } else if (Math.abs(start.speed ?? 0) > 0.5) {
-        const i = sheets.indexOf(sheet) + (start.speed < 0 ? 1 : -1);
-        next = sheets[Math.min(sheets.length - 1, Math.max(0, i))];
-    } else {
-        const offset = Math.min(offsets.peek, Math.max(0, start.offset + moved));
-        next = sheets.reduce((a, b) => (Math.abs(offsets[b] - offset) < Math.abs(offsets[a] - offset) ? b : a));
-    }
-    start = null;
-    setSheet(next);
-};
+}
 
-panel.addEventListener("pointerup", end);
-panel.addEventListener("pointercancel", end);
-mobile.addEventListener("change", () => setSheet("peek"));
-
-panel.addEventListener("pointerdown", (e) => {
-    if (!mobile.matches || (e.target !== handle && e.target !== panel)) return;
-    const offsets = sheetOffsets();
-    start = { y: e.clientY, offsets, offset: offsets[sheet], time: e.timeStamp, last: e.clientY };
+function activateDrag(e) {
+    start.active = true;
     panel.setPointerCapture(e.pointerId);
     panel.classList.add("dragging");
+}
+
+panel.addEventListener("pointerdown", (e) => {
+    if (!mobile.matches || start) return;
+    const fromHandle = handle.contains(e.target);
+    // 펼친 상태(full)에선 내용 스크롤을 우선하고, 손잡이로만 시트를 움직임
+    if (!fromHandle && sheet === "full") return;
+    // 드래그 중엔 레이아웃을 다시 읽지 않도록 시작할 때 한 번만 측정
+    const offsets = sheetOffsets();
+    start = {
+        id: e.pointerId, y: e.clientY, offsets, offset: offsets[sheet],
+        time: e.timeStamp, last: e.clientY, fromHandle, active: false,
+    };
+    // 손잡이는 바로 캡처. 내용 영역은 움직임이 확인될 때까지 캡처하지 않음
+    // (바로 캡처하면 버튼·입력칸의 click이 패널로 가버림)
+    if (fromHandle) activateDrag(e);
 });
 
 panel.addEventListener("pointermove", (e) => {
-    if (!start) return;
-    panelOffset = Math.min(start.offsets.peek, Math.max(0, start.offset + e.clientY - start.y));
+    if (!start || e.pointerId !== start.id) return;
+    const moved = e.clientY - start.y;
+    if (!start.active) {
+        if (Math.abs(moved) < DRAG_THRESHOLD) return;
+        activateDrag(e);
+    }
+    panelOffset = Math.min(start.offsets.peek, Math.max(0, start.offset + moved));
     if (!panelFrame) {
         panelFrame = requestAnimationFrame(() => {
             panelFrame = 0;
@@ -959,6 +1020,44 @@ panel.addEventListener("pointermove", (e) => {
     start.last = e.clientY;
     start.lastTime = e.timeStamp;
 });
+
+panel.addEventListener("pointerup", (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const gesture = start;
+    start = null;
+    stopDrag();
+
+    const moved = e.clientY - gesture.y;
+    if (!gesture.active) {
+        // 내용 영역을 그냥 탭한 것 → 시트는 그대로, click은 원래대로 전달됨
+        if (!gesture.fromHandle) return;
+    }
+
+    let next;
+    if (Math.abs(moved) < DRAG_THRESHOLD) {
+        next = sheet === "peek" ? "half" : "peek";
+    } else if (Math.abs(gesture.speed ?? 0) > 0.5) {
+        const i = sheets.indexOf(sheet) + (gesture.speed < 0 ? 1 : -1);
+        next = sheets[Math.min(sheets.length - 1, Math.max(0, i))];
+    } else {
+        const offsets = gesture.offsets;
+        const offset = Math.min(offsets.peek, Math.max(0, gesture.offset + moved));
+        next = sheets.reduce((a, b) => (Math.abs(offsets[b] - offset) < Math.abs(offsets[a] - offset) ? b : a));
+    }
+    setSheet(next);
+});
+
+// pointercancel = 브라우저가 제스처를 가져감 (스크롤 등).
+// 시트 단계는 바꾸지 않고 원래 위치로만 되돌림
+// (취소 이벤트의 clientY는 믿을 수 없어서 그대로 쓰면 시트가 튐)
+panel.addEventListener("pointercancel", (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    start = null;
+    stopDrag();
+    setSheet(sheet);
+});
+
+mobile.addEventListener("change", () => setSheet("peek"));
 
 document.getElementById("random").addEventListener("click", () => {
     const departure = searchables[Math.floor(Math.random() * searchables.length)].id;
