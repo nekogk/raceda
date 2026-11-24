@@ -1,7 +1,6 @@
 const DEBUG = false;
 const city = location.pathname.split("/").filter(Boolean)[0];
 
-// 세 파일을 병렬로 받음 (기존: 순차 요청)
 const [stations, lines, mapText] = await Promise.all([
     fetch(`/${city}/stations.json`).then((r) => r.json()),
     fetch(`/${city}/lines.json`).then((r) => r.json()),
@@ -34,8 +33,6 @@ let suggestIndex = -1;
 
 const NS = "http://www.w3.org/2000/svg";
 
-/* ---------- 그래프 사전 계산 ---------- */
-
 function hasOneway(line, service) {
     return lines[line].oneway?.[service] !== undefined;
 }
@@ -44,8 +41,6 @@ function stateKey(station, line, service, index) {
     return hasOneway(line, service) ? `${station}|${line}|${service}|${index}` : `${station}|${line}|${service}`;
 }
 
-// 역 ID → 그 역이 등장하는 모든 (노선, 운행계통, 인덱스, 상태 키)
-// 기존엔 이웃을 구할 때마다 전체 노선을 훑었음
 const occurrences = new Map();
 for (const [line, { services }] of Object.entries(lines)) {
     for (const [service, stops] of Object.entries(services)) {
@@ -115,7 +110,6 @@ function setSearch() {
         });
     }
 
-    // 항목마다 리스너를 붙이는 대신 위임 하나로 처리
     suggest.addEventListener("click", (event) => {
         const li = event.target.closest("li[data-id]");
         if (li && suggestInput) chooseSuggest(suggestInput, li.dataset.id);
@@ -125,7 +119,6 @@ function setSearch() {
         if (!occurrences.has(id)) continue;
         const { st, en } = stations[id];
         const named = Boolean(st || en);
-        // 소문자 변환을 입력할 때마다 하지 않도록 미리 계산
         const keys = (named ? [st, en] : [id]).filter(Boolean).map((key) => String(key).toLowerCase());
         search.push({ id, label: stationLabel(id), keys });
     }
@@ -169,7 +162,6 @@ function blockedBackward(line, service, i) {
     return (lines[line].oneway?.[service] ?? []).some(([a, b]) => a <= i - 1 && i <= b);
 }
 
-// 그래프는 바뀌지 않으므로 이웃 목록을 한 번 계산한 뒤 캐시
 const neighborCache = new Map();
 
 function getNeighbors(key) {
@@ -203,8 +195,6 @@ function getNeighbors(key) {
     return list;
 }
 
-// 이진 힙 (기존: 매 반복마다 Set을 배열로 복사해서 최솟값을 찾음 → O(V²))
-// 항목: [거리, 삽입 순서, 키]
 const heapLess = (x, y) => x[0] < y[0] || (x[0] === y[0] && x[1] < y[1]);
 class MinHeap {
     constructor() { this.a = []; }
@@ -257,7 +247,7 @@ function getRoute(from, to) {
 
     while (heap.size > 0) {
         const [d, , cur] = heap.pop();
-        if (d > dist.get(cur)) continue; // 이미 더 짧은 거리로 처리된 낡은 항목
+        if (d > dist.get(cur)) continue;
 
         if (cur.startsWith(target)) return [cur, prev, d];
 
@@ -378,7 +368,6 @@ function openSuggest(input) {
         else if (item.keys.some((key) => key.includes(query))) contains.push(item);
     }
 
-    // 한 번에 DOM에 붙임
     const fragment = document.createDocumentFragment();
     for (const list of [starts, contains]) {
         for (const { id, label } of list) {
@@ -425,7 +414,6 @@ function showRoute(departure, destination) {
         return;
     }
 
-    // 경로 복원은 한 번만 해서 목록과 지도 양쪽에 씀
     const [goal, prev, dist] = route;
     const path = [];
     for (let cur = goal; cur !== null; cur = prev.get(cur)) path.push(cur.split("|"));
@@ -478,7 +466,7 @@ function setupMap(svg) {
             }
         }
     }
-    // 근접 탐색용 평탄 배열
+
     const platformX = Float64Array.from(px);
     const platformY = Float64Array.from(py);
     const platformCount = pid.length;
@@ -524,7 +512,6 @@ function setupMap(svg) {
         return d;
     }
 
-    // 역 모양은 바뀌지 않으므로 캐시
     const shapeCache = new Map();
     function stationShape(id) {
         let d = shapeCache.get(id);
@@ -548,8 +535,6 @@ function setupMap(svg) {
         return d;
     }
 
-    /* ---------- 뷰 (팬/줌) ---------- */
-
     const view = { x: mapX, y: mapY, w: mapW };
     let size = { w: svg.clientWidth, h: svg.clientHeight };
     let origin = { left: 0, top: 0 };
@@ -570,7 +555,6 @@ function setupMap(svg) {
         svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.w * size.h / size.w}`);
     }
 
-    // viewBox 변경은 프레임당 한 번만
     let viewFrame = 0;
     function scheduleView() {
         if (viewFrame) return;
@@ -592,7 +576,6 @@ function setupMap(svg) {
         applyView();
     }).observe(svg);
 
-    // getScreenCTM() 대신 현재 view 값으로 직접 계산 (강제 레이아웃 없음)
     function toMapPoint({ clientX, clientY }) {
         if (originDirty) measure();
         const scale = view.w / size.w;
@@ -632,7 +615,6 @@ function setupMap(svg) {
         }
     });
 
-    // 마우스 호버 커서: 프레임당 한 번만 검사, 바뀔 때만 스타일 변경
     let hoverPoint = null, hoverFrame = 0, hoverCursor = "";
     function updateHover() {
         hoverFrame = 0;
@@ -854,7 +836,6 @@ function setupMap(svg) {
         for (const station of ends) if (!middles.has(station)) terminals.add(station);
     }
 
-    // 바뀐 라벨만 스타일을 건드림
     const setLabelDim = (label, dim) => {
         if (label.dimmed === dim) return;
         label.dimmed = dim;
@@ -892,7 +873,6 @@ function setupMap(svg) {
         };
         const strokesOf = (line) => rides.get(line).map((points) => addClear(pathOf(points), routhWidth));
 
-        // 마스크 내용을 조각에 먼저 모은 뒤 한 번에 교체 (마스크 재계산 1회)
         const fogContent = document.createDocumentFragment();
         fogContent.append(makeRect(mapX, mapY, mapW, mapH, "white"));
         lineGroups.forEach((group, i) => {
@@ -931,8 +911,6 @@ function setupMap(svg) {
     };
 }
 
-/* ---------- 모바일 바텀 시트 ---------- */
-
 let panelFrame = 0, panelOffset = 0;
 
 const end = (e) => {
@@ -962,7 +940,6 @@ mobile.addEventListener("change", () => setSheet("peek"));
 
 panel.addEventListener("pointerdown", (e) => {
     if (!mobile.matches || (e.target !== handle && e.target !== panel)) return;
-    // 드래그 중엔 레이아웃을 다시 읽지 않도록 시작할 때 한 번만 측정
     const offsets = sheetOffsets();
     start = { y: e.clientY, offsets, offset: offsets[sheet], time: e.timeStamp, last: e.clientY };
     panel.setPointerCapture(e.pointerId);
