@@ -1,7 +1,13 @@
+const DEBUG = false;
 const city = location.pathname.split("/").filter(Boolean)[0];
-const stations = await (await fetch(`/${city}/stations.json`)).json();
-const lines = await (await fetch(`/${city}/lines.json`)).json();
-const mapResponse = await fetch(`/${city}/map.svg`);
+
+// 세 파일을 병렬로 받음 (기존: 순차 요청)
+const [stations, lines, mapText] = await Promise.all([
+    fetch(`/${city}/stations.json`).then((r) => r.json()),
+    fetch(`/${city}/lines.json`).then((r) => r.json()),
+    fetch(`/${city}/map.svg`).then((r) => (r.ok ? r.text() : null)).catch(() => null),
+]);
+
 const result = document.getElementById("result");
 const departureInput = document.getElementById("departure");
 const destinationInput = document.getElementById("destination");
@@ -10,6 +16,7 @@ const panel = document.getElementById("panel");
 const handle = document.getElementById("handle");
 
 const mobile = matchMedia("(max-width: 768px)");
+const coarsePointer = matchMedia("(pointer: coarse)");
 const sheets = ["peek", "half", "full"];
 let sheet = "peek";
 let start = null;
@@ -26,9 +33,33 @@ let suggestInput = null;
 let suggestIndex = -1;
 
 const NS = "http://www.w3.org/2000/svg";
+
+/* ---------- 그래프 사전 계산 ---------- */
+
+function hasOneway(line, service) {
+    return lines[line].oneway?.[service] !== undefined;
+}
+
+function stateKey(station, line, service, index) {
+    return hasOneway(line, service) ? `${station}|${line}|${service}|${index}` : `${station}|${line}|${service}`;
+}
+
+// 역 ID → 그 역이 등장하는 모든 (노선, 운행계통, 인덱스, 상태 키)
+// 기존엔 이웃을 구할 때마다 전체 노선을 훑었음
+const occurrences = new Map();
+for (const [line, { services }] of Object.entries(lines)) {
+    for (const [service, stops] of Object.entries(services)) {
+        stops.forEach((station, i) => {
+            let list = occurrences.get(station);
+            if (!list) occurrences.set(station, (list = []));
+            list.push({ line, service, i, key: stateKey(station, line, service, i) });
+        });
+    }
+}
+
 const searchables = setSearch();
 closeSuggest();
-checkMissingStations();
+if (DEBUG) checkMissingStations();
 setSheet("peek");
 
 function sheetOffsets() {
@@ -57,8 +88,7 @@ function setStation(input, id) {
 
 function setSearch() {
     const search = [];
-    const used = new Set();
-    
+
     for (const input of [departureInput, destinationInput]) {
         input.autocomplete = "off";
         input.addEventListener("input", () => {
@@ -69,7 +99,7 @@ function setSearch() {
             if (mobile.matches) setSheet("full");
             openSuggest(input);
         });
-        
+
         input.addEventListener("blur", () => setTimeout(() => {
             if (suggestInput === input && document.activeElement !== input) closeSuggest();
         }, 200));
@@ -85,38 +115,35 @@ function setSearch() {
         });
     }
 
-    for (const { services } of Object.values(lines)) {
-        for (const stops of Object.values(services)) for (const id of stops) used.add(id);
-    }
+    // 항목마다 리스너를 붙이는 대신 위임 하나로 처리
+    suggest.addEventListener("click", (event) => {
+        const li = event.target.closest("li[data-id]");
+        if (li && suggestInput) chooseSuggest(suggestInput, li.dataset.id);
+    });
+
     for (const id of Object.keys(stations)) {
-        if (!used.has(id)) continue;
+        if (!occurrences.has(id)) continue;
         const { st, en } = stations[id];
         const named = Boolean(st || en);
-        search.push({ id, label: stationLabel(id), keys: named ? [st, en] : [id] });
+        // 소문자 변환을 입력할 때마다 하지 않도록 미리 계산
+        const keys = (named ? [st, en] : [id]).filter(Boolean).map((key) => String(key).toLowerCase());
+        search.push({ id, label: stationLabel(id), keys });
     }
     return search;
 }
 
 function checkMissingStations() {
-  const missing = new Map();
-
-  for (const [lineId, lineData] of Object.entries(lines)) {
-    for (const [serviceId, serviceData] of Object.entries(lineData.services)) {
-      for (const id of serviceData) {
-        if (Object.hasOwn(stations, id)) continue;
-        if (!missing.has(id)) missing.set(id, []);
-        missing.get(id).push(`${lineId}.${serviceId}`);
-      }
+    const missing = new Map();
+    for (const [lineId, lineData] of Object.entries(lines)) {
+        for (const [serviceId, serviceData] of Object.entries(lineData.services)) {
+            for (const id of serviceData) {
+                if (Object.hasOwn(stations, id)) continue;
+                if (!missing.has(id)) missing.set(id, []);
+                missing.get(id).push(`${lineId}.${serviceId}`);
+            }
+        }
     }
-  }
-
-  if (missing.size !== 0) {
-    for (const [id, data] of missing) {
-      //console.warn(`역 정보 없음: ${id} (${[...new Set(data)].join(", ")})`);
-    }
-  }
-
-  return;
+    for (const [id, data] of missing) console.warn(`역 정보 없음: ${id} (${[...new Set(data)].join(", ")})`);
 }
 
 function segmentCost(line, service, prev, next) {
@@ -125,54 +152,44 @@ function segmentCost(line, service, prev, next) {
     const distance = loop && raw < 0 ? loop + raw : raw;
     const velocity = lines[line].velocities?.[service] ?? 1;
     const dwell = lines[line].dwells?.[service] ?? 1;
-    
+
     if (Number.isNaN(distance)) {
-        //console.warn(`거리 정보 없음: ${line} ${service} ${prev} → ${next}`);
+        if (DEBUG) console.warn(`거리 정보 없음: ${line} ${service} ${prev} → ${next}`);
         return moveCost;
     }
     if (distance <= 0) {
-        //console.warn(`거리가 음수임: ${line} ${service} ${prev} → ${next}`);
+        if (DEBUG) console.warn(`거리가 음수임: ${line} ${service} ${prev} → ${next}`);
         return moveCost;
     }
 
     return distance / velocity + dwell;
 }
 
-function hasOneway(line, service) {
-    return lines[line].oneway?.[service] !== undefined;
-}
-
-function stateKey(station, line, service, index) {
-    return hasOneway(line, service) ? `${station}|${line}|${service}|${index}` : `${station}|${line}|${service}`;
-}
-
-function indexesOf(stops, station) {
-    const result = [];
-    stops.forEach((s, i) => { if (s === station) result.push(i); });
-    return result;
-}
-
 function blockedBackward(line, service, i) {
     return (lines[line].oneway?.[service] ?? []).some(([a, b]) => a <= i - 1 && i <= b);
 }
 
+// 그래프는 바뀌지 않으므로 이웃 목록을 한 번 계산한 뒤 캐시
+const neighborCache = new Map();
+
 function getNeighbors(key) {
+    const cached = neighborCache.get(key);
+    if (cached) return cached;
+
     const [station, line, service, at] = key.split("|");
     const stops = lines[line].services[service];
+    const here = occurrences.get(station) ?? [];
     const neighbors = new Map();
 
-    for (const [lineId, lineData] of Object.entries(lines)) {
-        for (const [serviceId, serviceData] of Object.entries(lineData.services)) {
-            for (const i of indexesOf(serviceData, station)) {
-                const next = stateKey(station, lineId, serviceId, i);
-                if (next === key) continue;
-                neighbors.set(next, lineId === line ? platformCost : transferCost);
-            }
-        }
+    for (const o of here) {
+        if (o.key === key) continue;
+        neighbors.set(o.key, o.line === line ? platformCost : transferCost);
     }
 
-    const here = at === undefined ? indexesOf(stops, station) : [Number(at)];
-    for (const i of here) {
+    const indexes = at === undefined
+        ? here.filter((o) => o.line === line && o.service === service).map((o) => o.i)
+        : [Number(at)];
+    for (const i of indexes) {
         if (i > 0 && !blockedBackward(line, service, i)) {
             neighbors.set(stateKey(stops[i - 1], line, service, i - 1), segmentCost(line, service, stops[i - 1], station));
         }
@@ -181,49 +198,82 @@ function getNeighbors(key) {
         }
     }
 
-    return neighbors;
+    const list = [...neighbors];
+    neighborCache.set(key, list);
+    return list;
+}
+
+// 이진 힙 (기존: 매 반복마다 Set을 배열로 복사해서 최솟값을 찾음 → O(V²))
+// 항목: [거리, 삽입 순서, 키]
+const heapLess = (x, y) => x[0] < y[0] || (x[0] === y[0] && x[1] < y[1]);
+class MinHeap {
+    constructor() { this.a = []; }
+    get size() { return this.a.length; }
+    push(item) {
+        const a = this.a;
+        a.push(item);
+        let i = a.length - 1;
+        while (i > 0) {
+            const p = (i - 1) >> 1;
+            if (!heapLess(a[i], a[p])) break;
+            [a[i], a[p]] = [a[p], a[i]];
+            i = p;
+        }
+    }
+    pop() {
+        const a = this.a;
+        const top = a[0];
+        const last = a.pop();
+        if (a.length > 0) {
+            a[0] = last;
+            let i = 0;
+            for (;;) {
+                const l = 2 * i + 1, r = l + 1;
+                let m = i;
+                if (l < a.length && heapLess(a[l], a[m])) m = l;
+                if (r < a.length && heapLess(a[r], a[m])) m = r;
+                if (m === i) break;
+                [a[i], a[m]] = [a[m], a[i]];
+                i = m;
+            }
+        }
+        return top;
+    }
 }
 
 function getRoute(from, to) {
     const dist = new Map();
     const prev = new Map();
-    const queue = new Set();
+    const heap = new MinHeap();
+    const target = `${to}|`;
+    let seq = 0;
 
-    for (const [lineId, lineData] of Object.entries(lines)) {
-        for (const [serviceId, serviceData] of Object.entries(lineData.services)) {
-            for (const i of indexesOf(serviceData, from)) {
-                const key = stateKey(from, lineId, serviceId, i);
-                dist.set(key, 0);
-                prev.set(key, null);
-                queue.add(key);
-            }
-        }
+    for (const { key } of occurrences.get(from) ?? []) {
+        if (dist.has(key)) continue;
+        dist.set(key, 0);
+        prev.set(key, null);
+        heap.push([0, seq++, key]);
     }
-    
-    while (queue.size > 0) {
-        const cur = [...queue].reduce((best, i) => dist.get(i) < dist.get(best) ? i : best);
-        queue.delete(cur);
 
-        if (cur.split("|")[0] === to) return [cur, prev, dist.get(cur)];
+    while (heap.size > 0) {
+        const [d, , cur] = heap.pop();
+        if (d > dist.get(cur)) continue; // 이미 더 짧은 거리로 처리된 낡은 항목
+
+        if (cur.startsWith(target)) return [cur, prev, d];
 
         for (const [next, cost] of getNeighbors(cur)) {
-            const d = dist.get(cur) + cost;
-            if (!dist.has(next) || d < dist.get(next)) {
-                dist.set(next, d);
+            const nd = d + cost;
+            const old = dist.get(next);
+            if (old === undefined || nd < old) {
+                dist.set(next, nd);
                 prev.set(next, cur);
-                queue.add(next);
+                heap.push([nd, seq++, next]);
             }
         }
     }
-
-    return;
 }
 
-function buildPath(goal, prev, dist) {
-    const path = [];
-    for (let cur = goal; cur !== null; cur = prev.get(cur)) path.push(cur.split("|"));
-    path.reverse();
-    
+function buildPath(path, dist) {
     const lineList = document.createElement("div");
     lineList.append(`Total: ${Math.floor(dist / 60)}h ${Math.floor(dist % 60)}m ${Math.floor(dist * 60 % 60)}s`);
 
@@ -236,16 +286,17 @@ function buildPath(goal, prev, dist) {
         lineBox.classList.add("line-box");
         lineRow.classList.add("line-row");
 
-        for (;i < path.length; i++) {
+        for (; i < path.length; i++) {
             const stationRow = document.createElement("text");
             stationRow.classList.add("station-row");
-            stationRow.append(document.createTextNode(`${stations[path[i][0]].st ?? path[i][0]} ${stations[path[i][0]].en ?? ""}`.trim()));
-            stationList.append(stationRow)
+            stationRow.append(`${stations[path[i][0]].st ?? path[i][0]} ${stations[path[i][0]].en ?? ""}`.trim());
+            stationList.append(stationRow);
             if (i === path.length - 1 || path[i][0] === path[i + 1][0]) break;
         }
-    
+
         const stationCount = stationList.childElementCount;
-        const lineColor = lines[path[i][1]].color;
+        const lineData = lines[path[i][1]];
+        const lineColor = lineData.color;
         const svgElement = document.createElementNS(NS, "svg");
         svgElement.setAttribute("width", "2rem");
         svgElement.setAttribute("height", `${2 * stationCount}rem`);
@@ -257,12 +308,13 @@ function buildPath(goal, prev, dist) {
         lineElement.setAttribute("stroke", lineColor);
         lineElement.setAttribute("stroke-width", 8);
         svgElement.append(lineElement);
-        
-        if (lines[path[i][1]].subcolor?.[path[i][2]] !== undefined) {
+
+        const subcolor = lineData.subcolor?.[path[i][2]];
+        if (subcolor !== undefined) {
             const serviceElement = document.createElementNS(NS, "path");
             serviceElement.setAttribute("d", `M 8 24 8 ${32 * stationCount - 24}`);
             serviceElement.setAttribute("fill", "none");
-            serviceElement.setAttribute("stroke", lines[path[i][1]].subcolor[path[i][2]]);
+            serviceElement.setAttribute("stroke", subcolor);
             serviceElement.setAttribute("stroke-width", 2);
             serviceElement.setAttribute("stroke-linecap", "round");
             svgElement.append(serviceElement);
@@ -270,11 +322,10 @@ function buildPath(goal, prev, dist) {
 
         for (let j = 0; j < stationCount; j++) {
             const stationElement = document.createElementNS(NS, "circle");
-
             stationElement.setAttribute("cy", 32 * j + 16);
             stationElement.setAttribute("fill", "white");
 
-            if (j === 0 || j === stationCount -1) {
+            if (j === 0 || j === stationCount - 1) {
                 stationElement.setAttribute("cx", 16);
                 stationElement.setAttribute("stroke", lineColor);
                 stationElement.setAttribute("r", 6);
@@ -283,21 +334,21 @@ function buildPath(goal, prev, dist) {
                 stationElement.setAttribute("cx", 20);
                 stationElement.setAttribute("r", 4);
             }
-
-            svgElement.append(stationElement)
+            svgElement.append(stationElement);
         }
 
-        lineIcon.classList.add(lines[path[i][1]].icon[0]);
-        if (lines[path[i][1]].icon[1] === "background") lineIcon.style.backgroundColor = lineColor;
-        if (lines[path[i][1]].icon[1] === "outline") lineIcon.style.outlineColor = lineColor;
-        if (lines[path[i][1]].icon[1] === "text") {
+        const [iconClass, iconMode, iconText] = lineData.icon;
+        lineIcon.classList.add(iconClass);
+        if (iconMode === "background") lineIcon.style.backgroundColor = lineColor;
+        if (iconMode === "outline") lineIcon.style.outlineColor = lineColor;
+        if (iconMode === "text") {
             lineIcon.style.outlineColor = lineColor;
             lineIcon.style.color = lineColor;
         }
 
-        lineIcon.append(lines[path[i][1]].icon[2]);
-        lineRow.append(lineIcon, document.createTextNode(`${lines[path[i][1]].st ?? path[i][1]} ${lines[path[i][1]].en ?? ""}`.trim()))
-        lineBox.append(svgElement, stationList)
+        lineIcon.append(iconText);
+        lineRow.append(lineIcon, `${lineData.st ?? path[i][1]} ${lineData.en ?? ""}`.trim());
+        lineBox.append(svgElement, stationList);
         lineList.append(lineRow, lineBox);
     }
 
@@ -314,8 +365,7 @@ function closeSuggest() {
 function chooseSuggest(input, id) {
     setStation(input, id);
     closeSuggest();
-    if (input === departureInput) markStation("departure", id);
-    else markStation("destination", id);
+    markStation(input === departureInput ? "departure" : "destination", id);
 }
 
 function openSuggest(input) {
@@ -324,27 +374,27 @@ function openSuggest(input) {
 
     const starts = [], contains = [];
     for (const item of searchables) {
-        const keys = item.keys.filter(Boolean).map((key) => key.toLowerCase());
-        if (keys.some((key) => key.startsWith(query))) starts.push(item);
-        else if (keys.some((key) => key.includes(query))) contains.push(item);
+        if (item.keys.some((key) => key.startsWith(query))) starts.push(item);
+        else if (item.keys.some((key) => key.includes(query))) contains.push(item);
     }
-    const matches = [...starts, ...contains];
 
-    suggest.replaceChildren();
-    for (const { id, label } of matches) {
-        const li = document.createElement("li");
-        li.textContent = label;
-        li.dataset.id = id;
-
-        li.addEventListener("click", () => chooseSuggest(input, id));
-        suggest.append(li);
+    // 한 번에 DOM에 붙임
+    const fragment = document.createDocumentFragment();
+    for (const list of [starts, contains]) {
+        for (const { id, label } of list) {
+            const li = document.createElement("li");
+            li.textContent = label;
+            li.dataset.id = id;
+            fragment.append(li);
+        }
     }
-    if (matches.length === 0) {
+    if (starts.length + contains.length === 0) {
         const li = document.createElement("li");
         li.className = "empty";
         li.textContent = "No results";
-        suggest.append(li);
+        fragment.append(li);
     }
+    suggest.replaceChildren(fragment);
 
     suggestInput = input;
     suggestIndex = -1;
@@ -355,10 +405,11 @@ function openSuggest(input) {
 }
 
 function moveSuggest(step) {
-    const items = [...suggest.querySelectorAll("li[data-id]")];
+    const items = suggest.querySelectorAll("li[data-id]");
     if (items.length === 0) return;
+    items[suggestIndex]?.classList.remove("active");
     suggestIndex = (suggestIndex + step + items.length) % items.length;
-    items.forEach((li, i) => li.classList.toggle("active", i === suggestIndex));
+    items[suggestIndex].classList.add("active");
     items[suggestIndex].scrollIntoView({ block: "nearest" });
 }
 
@@ -373,17 +424,21 @@ function showRoute(departure, destination) {
         highlightRoute(null);
         return;
     }
-    result.replaceChildren(buildPath(route[0], route[1], route[2]));
 
+    // 경로 복원은 한 번만 해서 목록과 지도 양쪽에 씀
+    const [goal, prev, dist] = route;
     const path = [];
-    for (let cur = route[0]; cur !== null; cur = route[1].get(cur)) path.push(cur.split("|"));
-    highlightRoute(path.reverse());
+    for (let cur = goal; cur !== null; cur = prev.get(cur)) path.push(cur.split("|"));
+    path.reverse();
+
+    result.replaceChildren(buildPath(path, dist));
+    highlightRoute(path);
 }
 
 let highlightRoute = () => {};
 let markStation = () => {};
 
-if (mapResponse.ok) setupMap(new DOMParser().parseFromString(await mapResponse.text(), "image/svg+xml").documentElement);
+if (mapText !== null) setupMap(new DOMParser().parseFromString(mapText, "image/svg+xml").documentElement);
 else document.getElementById("map").hidden = true;
 
 function setupMap(svg) {
@@ -408,21 +463,25 @@ function setupMap(svg) {
 
     const labels = [...textLayer.querySelectorAll(":scope > g")].map((element) => {
         const { x, y, width, height } = element.getBBox();
-        return { element, x: x + width / 2, y: y + height / 2 };
+        return { element, x: x + width / 2, y: y + height / 2, dimmed: false };
     });
 
-    const platforms = [];
     const platformsOf = new Map();
+    const px = [], py = [], pid = [];
     for (const lineData of Object.values(lines)) {
         const all = [lineData.positions ?? {}, ...Object.values(lineData.servicePositions ?? {})];
         for (const positions of all) {
             for (const [id, [x, y]] of Object.entries(positions)) {
-                platforms.push([x, y, id]);
+                px.push(x); py.push(y); pid.push(id);
                 if (!platformsOf.has(id)) platformsOf.set(id, []);
                 platformsOf.get(id).push([x, y]);
             }
         }
     }
+    // 근접 탐색용 평탄 배열
+    const platformX = Float64Array.from(px);
+    const platformY = Float64Array.from(py);
+    const platformCount = pid.length;
 
     function pathOf(points) {
         const pts = points.filter((p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]);
@@ -456,19 +515,23 @@ function setupMap(svg) {
                 d += `L${f(x)} ${f(y)}`;
                 continue;
             }
-            const [px, py] = pts[i - 1], [nx, ny] = pts[i + 1];
-            const l1 = Math.hypot(x - px, y - py), l2 = Math.hypot(nx - x, ny - y);
+            const [ppx, ppy] = pts[i - 1], [nx, ny] = pts[i + 1];
+            const l1 = Math.hypot(x - ppx, y - ppy), l2 = Math.hypot(nx - x, ny - y);
             const r = cut[i] / Math.tan(Math.abs(turn[i]) / 2);
-            d += `L${f(x - (x - px) / l1 * cut[i])} ${f(y - (y - py) / l1 * cut[i])}`;
+            d += `L${f(x - (x - ppx) / l1 * cut[i])} ${f(y - (y - ppy) / l1 * cut[i])}`;
             d += `A${f(r)} ${f(r)} 0 0 ${turn[i] > 0 ? 1 : 0} ${f(x + (nx - x) / l2 * cut[i])} ${f(y + (ny - y) / l2 * cut[i])}`;
         }
         return d;
     }
 
+    // 역 모양은 바뀌지 않으므로 캐시
+    const shapeCache = new Map();
     function stationShape(id) {
+        let d = shapeCache.get(id);
+        if (d !== undefined) return d;
         const points = platformsOf.get(id);
         const joined = [points[0]], rest = points.slice(1);
-        let d = pathOf([points[0], points[0]]);
+        d = pathOf([points[0], points[0]]);
         while (rest.length > 0) {
             let best = null;
             for (const p of joined) {
@@ -481,42 +544,74 @@ function setupMap(svg) {
             joined.push(best[2]);
             rest.splice(rest.indexOf(best[2]), 1);
         }
+        shapeCache.set(id, d);
         return d;
     }
 
+    /* ---------- 뷰 (팬/줌) ---------- */
+
     const view = { x: mapX, y: mapY, w: mapW };
+    let size = { w: svg.clientWidth, h: svg.clientHeight };
+    let origin = { left: 0, top: 0 };
+    let originDirty = true;
+
+    function measure() {
+        const rect = svg.getBoundingClientRect();
+        origin = { left: rect.left + svg.clientLeft, top: rect.top + svg.clientTop };
+        size = { w: svg.clientWidth, h: svg.clientHeight };
+        originDirty = false;
+    }
+    const markDirty = () => { originDirty = true; };
+    addEventListener("scroll", markDirty, { passive: true, capture: true });
+    addEventListener("resize", markDirty, { passive: true });
 
     function applyView() {
-        if (svg.clientWidth === 0) return;
-        const h = view.w * svg.clientHeight / svg.clientWidth;
-        svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${h}`);
+        if (size.w === 0) return;
+        svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.w * size.h / size.w}`);
     }
 
-    const ratio = svg.clientWidth / svg.clientHeight;
+    // viewBox 변경은 프레임당 한 번만
+    let viewFrame = 0;
+    function scheduleView() {
+        if (viewFrame) return;
+        viewFrame = requestAnimationFrame(() => {
+            viewFrame = 0;
+            applyView();
+        });
+    }
+
+    const ratio = size.w / size.h;
     view.w = Math.max(mapW, mapH * ratio);
     view.x = mapX + (mapW - view.w) / 2;
     view.y = mapY + (mapH - view.w / ratio) / 2;
 
-    if (mobile.matches) view.y += (innerHeight - panel.getBoundingClientRect().top) / 2 * view.w / svg.clientWidth;
+    if (mobile.matches) view.y += (innerHeight - panel.getBoundingClientRect().top) / 2 * view.w / size.w;
     applyView();
-    new ResizeObserver(applyView).observe(svg);
+    new ResizeObserver(() => {
+        measure();
+        applyView();
+    }).observe(svg);
 
-    function toMapPoint(e) {
-        return new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+    // getScreenCTM() 대신 현재 view 값으로 직접 계산 (강제 레이아웃 없음)
+    function toMapPoint({ clientX, clientY }) {
+        if (originDirty) measure();
+        const scale = view.w / size.w;
+        return { x: view.x + (clientX - origin.left) * scale, y: view.y + (clientY - origin.top) * scale };
     }
+
+    const clampW = (w) => Math.min(mapW * 2, Math.max(mapW / 24, w));
 
     svg.addEventListener("wheel", (e) => {
         e.preventDefault();
         const p = toMapPoint(e);
-        const w = Math.min(mapW * 2, Math.max(mapW / 24, view.w * (e.deltaY < 0 ? 0.85 : 1 / 0.85)));
+        const w = clampW(view.w * (e.deltaY < 0 ? 0.85 : 1 / 0.85));
         const r = w / view.w;
-        view.x = p.x - (p.x - view.x) * r; 
+        view.x = p.x - (p.x - view.x) * r;
         view.y = p.y - (p.y - view.y) * r;
         view.w = w;
-        applyView();
+        scheduleView();
     }, { passive: false });
 
-    const clampW = (w) => Math.min(mapW * 2, Math.max(mapW / 24, w));
     const pointers = new Map();
     const middle = () => {
         const [a, b] = [...pointers.values()];
@@ -526,6 +621,7 @@ function setupMap(svg) {
 
     svg.addEventListener("pointerdown", (e) => {
         svg.setPointerCapture(e.pointerId);
+        originDirty = true;
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size === 1) {
             drag = { start: toMapPoint(e), x: e.clientX, y: e.clientY, moved: false };
@@ -535,29 +631,39 @@ function setupMap(svg) {
             if (drag) drag.moved = true;
         }
     });
+
+    // 마우스 호버 커서: 프레임당 한 번만 검사, 바뀔 때만 스타일 변경
+    let hoverPoint = null, hoverFrame = 0, hoverCursor = "";
+    function updateHover() {
+        hoverFrame = 0;
+        const cursor = nearestStation(toMapPoint(hoverPoint)) !== null ? "pointer" : "";
+        if (cursor !== hoverCursor) svg.style.cursor = hoverCursor = cursor;
+    }
+
     svg.addEventListener("pointermove", (e) => {
         if (!pointers.has(e.pointerId)) {
-            svg.style.cursor = nearestStation(toMapPoint(e)) ? "pointer" : "";
+            if (e.pointerType === "touch") return;
+            hoverPoint = { clientX: e.clientX, clientY: e.clientY };
+            if (!hoverFrame) hoverFrame = requestAnimationFrame(updateHover);
             return;
         }
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pinch && pointers.size >= 2) {
             const m = middle();
             view.w = clampW(pinch.w * pinch.dist / Math.max(1, m.dist));
-            applyView();
             const now = toMapPoint(m);
             view.x += pinch.anchor.x - now.x;
             view.y += pinch.anchor.y - now.y;
-            applyView();
+            scheduleView();
             return;
         }
         if (!drag) return;
-        if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true;
+        if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true;
         if (!drag.moved) return;
         const p = toMapPoint(e);
         view.x -= p.x - drag.start.x;
         view.y -= p.y - drag.start.y;
-        applyView();
+        scheduleView();
     });
     const release = (e) => {
         pointers.delete(e.pointerId);
@@ -571,14 +677,15 @@ function setupMap(svg) {
     svg.addEventListener("pointercancel", release);
 
     function nearestStation(p) {
-        let best = null;
-        const reach = matchMedia("(pointer: coarse)").matches ? 22 : 12;
-        let bestDist = Math.max(8, reach * view.w / svg.clientWidth);
-        for (const [x, y, id] of platforms) {
-            const d = Math.hypot(x - p.x, y - p.y);
-            if (d < bestDist) { best = id; bestDist = d; }
+        const reach = coarsePointer.matches ? 22 : 12;
+        const limit = Math.max(8, reach * view.w / size.w);
+        let best = -1, bestSq = limit * limit;
+        for (let i = 0; i < platformCount; i++) {
+            const dx = platformX[i] - p.x, dy = platformY[i] - p.y;
+            const d = dx * dx + dy * dy;
+            if (d < bestSq) { best = i; bestSq = d; }
         }
-        return best;
+        return best < 0 ? null : pid[best];
     }
 
     let picking = "departure";
@@ -668,15 +775,16 @@ function setupMap(svg) {
         let best = -1, bestCount = -1;
         lineGroups.forEach((group, i) => {
             if (group.color !== color) return;
-            const count = points.filter((p) => group.bodies.some((body) => body.isPointInStroke(p))).length;
+            let count = 0;
+            for (const p of points) if (group.bodies.some((body) => body.isPointInStroke(p))) count++;
             if (count > bestCount) { best = i; bestCount = count; }
         });
         groupOf[line] = best;
     }
 
     const bridgeCovers = [...bridges.children].filter(isBody).map((element) => {
-        const middle = element.getPointAtLength(element.getTotalLength() / 2);
-        return { color: getComputedStyle(element).stroke, middle: [middle.x, middle.y], cover: makeCover(element) };
+        const mid = element.getPointAtLength(element.getTotalLength() / 2);
+        return { color: getComputedStyle(element).stroke, middle: [mid.x, mid.y], cover: makeCover(element) };
     });
 
     function edgePoints(line, service, a, b) {
@@ -724,12 +832,12 @@ function setupMap(svg) {
     const fogMask = makeMask("fog-mask");
     const bgFogMask = makeMask("bg-fog-mask");
     const makeFog = (maskId) => {
-        const fog = makeRect(mapX, mapY, mapW, mapH, "white");
-        fog.setAttribute("fill-opacity", 1 - dimStrength);
-        fog.setAttribute("mask", `url(#${maskId})`);
-        fog.style.pointerEvents = "none";
-        fog.style.display = "none";
-        return fog;
+        const fogRect = makeRect(mapX, mapY, mapW, mapH, "white");
+        fogRect.setAttribute("fill-opacity", 1 - dimStrength);
+        fogRect.setAttribute("mask", `url(#${maskId})`);
+        fogRect.style.pointerEvents = "none";
+        fogRect.style.display = "none";
+        return fogRect;
     };
     const fog = makeFog("fog-mask");
     const bgFog = makeFog("bg-fog-mask");
@@ -746,10 +854,17 @@ function setupMap(svg) {
         for (const station of ends) if (!middles.has(station)) terminals.add(station);
     }
 
+    // 바뀐 라벨만 스타일을 건드림
+    const setLabelDim = (label, dim) => {
+        if (label.dimmed === dim) return;
+        label.dimmed = dim;
+        label.element.style.opacity = dim ? dimStrength : "";
+    };
+
     highlightRoute = (path) => {
         if (path === null) {
             fog.style.display = bgFog.style.display = "none";
-            for (const label of labels) label.element.style.opacity = "";
+            for (const label of labels) setLabelDim(label, false);
             legend.style.opacity = "";
             return;
         }
@@ -777,46 +892,56 @@ function setupMap(svg) {
         };
         const strokesOf = (line) => rides.get(line).map((points) => addClear(pathOf(points), routhWidth));
 
-        fogMask.replaceChildren(makeRect(mapX, mapY, mapW, mapH, "white"));
+        // 마스크 내용을 조각에 먼저 모은 뒤 한 번에 교체 (마스크 재계산 1회)
+        const fogContent = document.createDocumentFragment();
+        fogContent.append(makeRect(mapX, mapY, mapW, mapH, "white"));
         lineGroups.forEach((group, i) => {
-            fogMask.append(...group.covers);
-            for (const line of rides.keys()) if (groupOf[line] === i) fogMask.append(...strokesOf(line));
+            fogContent.append(...group.covers);
+            for (const line of rides.keys()) if (groupOf[line] === i) fogContent.append(...strokesOf(line));
         });
-        for (const line of rides.keys()) if (groupOf[line] < 0) fogMask.append(...strokesOf(line));
+        for (const line of rides.keys()) if (groupOf[line] < 0) fogContent.append(...strokesOf(line));
 
         for (const bridge of bridgeCovers) {
             const used = [...rides].some(([line, list]) =>
                 toRgb(lines[line].color) === bridge.color && list.some((points) => distanceTo(points, bridge.middle) < 3));
-            if (!used) fogMask.append(bridge.cover);
+            if (!used) fogContent.append(bridge.cover);
         }
 
         for (const station of passedStations) {
             const count = platformsOf.get(station)?.length ?? 0;
             if (count > 1) {
-                fogMask.append(addClear(stationShape(station), transferWidth));
+                fogContent.append(addClear(stationShape(station), transferWidth));
             } else if (count === 1 && terminals.has(station)) {
-                fogMask.append(addClear(stationShape(station), terminalWidth));
+                fogContent.append(addClear(stationShape(station), terminalWidth));
             }
         }
 
+        fogMask.replaceChildren(fogContent);
         bgFogMask.replaceChildren(...clear.map(([d, width]) => makeStroke(d, "white", width)));
         fog.style.display = bgFog.style.display = "";
 
         legend.style.opacity = dimStrength;
 
         const boxes = path.map(([station]) => stations[station]?.box).filter(Boolean);
-        for (const { element, x, y } of labels) {
+        for (const label of labels) {
+            const { x, y } = label;
             const lit = boxes.some(([x1, y1, x2, y2]) => x1 <= x && x <= x2 && y1 <= y && y <= y2);
-            element.style.opacity = lit ? "" : dimStrength;
+            setLabelDim(label, !lit);
         }
     };
 }
 
+/* ---------- 모바일 바텀 시트 ---------- */
+
+let panelFrame = 0, panelOffset = 0;
+
 const end = (e) => {
     if (!start) return;
+    cancelAnimationFrame(panelFrame);
+    panelFrame = 0;
     panel.classList.remove("dragging");
     const moved = e.clientY - start.y;
-    const offsets = sheetOffsets();
+    const offsets = start.offsets;
     let next;
     if (Math.abs(moved) < 5) {
         next = sheet === "peek" ? "half" : "peek";
@@ -829,7 +954,7 @@ const end = (e) => {
     }
     start = null;
     setSheet(next);
-}
+};
 
 panel.addEventListener("pointerup", end);
 panel.addEventListener("pointercancel", end);
@@ -837,24 +962,30 @@ mobile.addEventListener("change", () => setSheet("peek"));
 
 panel.addEventListener("pointerdown", (e) => {
     if (!mobile.matches || (e.target !== handle && e.target !== panel)) return;
-    start = { y: e.clientY, offset: sheetOffsets()[sheet], time: e.timeStamp, last: e.clientY };
+    // 드래그 중엔 레이아웃을 다시 읽지 않도록 시작할 때 한 번만 측정
+    const offsets = sheetOffsets();
+    start = { y: e.clientY, offsets, offset: offsets[sheet], time: e.timeStamp, last: e.clientY };
     panel.setPointerCapture(e.pointerId);
     panel.classList.add("dragging");
 });
 
 panel.addEventListener("pointermove", (e) => {
     if (!start) return;
-    const offset = Math.min(sheetOffsets().peek, Math.max(0, start.offset + e.clientY - start.y));
-    panel.style.transform = `translateY(${offset}px)`;
+    panelOffset = Math.min(start.offsets.peek, Math.max(0, start.offset + e.clientY - start.y));
+    if (!panelFrame) {
+        panelFrame = requestAnimationFrame(() => {
+            panelFrame = 0;
+            if (start) panel.style.transform = `translateY(${panelOffset}px)`;
+        });
+    }
     start.speed = (e.clientY - start.last) / Math.max(1, e.timeStamp - (start.lastTime ?? start.time));
     start.last = e.clientY;
     start.lastTime = e.timeStamp;
 });
 
 document.getElementById("random").addEventListener("click", () => {
-    const usables = searchables.map(({ id }) => id);
-    const departure = usables[Math.floor(Math.random() * usables.length)];
-    const destination = usables[Math.floor(Math.random() * usables.length)];
+    const departure = searchables[Math.floor(Math.random() * searchables.length)].id;
+    const destination = searchables[Math.floor(Math.random() * searchables.length)].id;
     showRoute(departure, destination);
     if (mobile.matches) setSheet("half");
 });
