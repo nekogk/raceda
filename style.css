@@ -242,7 +242,6 @@ body.home {
 
 .handle { display: none; }
 
-/* 자동완성 목록(.suggest)의 위치 기준 */
 .panel-body { position: relative; }
 
 @media (max-width: 768px) {
@@ -262,7 +261,6 @@ body.home {
         width: auto;
         height: 85vh;
         height: 85dvh;
-        /* 패널 자체는 스크롤하지 않음. 스크롤은 .panel-body가 담당 */
         display: flex;
         flex-direction: column;
         overflow: hidden;
@@ -299,12 +297,10 @@ body.home {
         flex: 1;
         min-height: 0;
         overflow: auto;
-        /* 끝에 닿았을 때 튕김·바깥으로 스크롤 전달 막기 */
         overscroll-behavior: none;
         padding: 0 1rem 1rem;
     }
 
-    /* 접힌 상태(peek/half)에선 내용이 스크롤되지 않고, 끌면 시트가 움직임 */
     #panel:not(.full) .panel-body {
         overflow: hidden;
         touch-action: none;
