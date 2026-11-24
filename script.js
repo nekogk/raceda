@@ -753,7 +753,7 @@ function setupMap(svg) {
         mask.id = id;
         mask.setAttribute("maskUnits", "userSpaceOnUse");
         for (const [key, value] of [["x", mapX], ["y", mapY], ["width", mapW], ["height", mapH]]) mask.setAttribute(key, value);
-        defs.append(mask);
+        // 문서에는 경로를 보여줄 때만 붙임 (showFog)
         return mask;
     }
     function makeRect(x, y, w, h, color) {
@@ -860,12 +860,14 @@ function setupMap(svg) {
     const fog = makeFog("fog-mask");
     const bgFog = makeFog("bg-fog-mask");
 
-    // 경로가 없을 땐 안개 rect를 DOM에서 빼고 마스크도 비워서
-    // 브라우저가 마스크를 아예 계산하지 않게 함
+    // 경로가 없을 땐 안개 rect와 <mask> 요소를 둘 다 DOM에서 떼어냄.
+    // 빈 mask라도 문서에 남아 있으면 Safari가 내부 캐시를 계속 붙잡는 경우가 있어서
+    // 처음 상태(마스크가 한 번도 없던 상태)와 똑같이 되돌림
     let fogShown = false;
     function showFog() {
         if (fogShown) return;
         fogShown = true;
+        defs.append(fogMask, bgFogMask);
         routed.after(fog);
         routed.before(bgFog);
     }
@@ -876,7 +878,15 @@ function setupMap(svg) {
         bgFog.remove();
         fogMask.replaceChildren();
         bgFogMask.replaceChildren();
+        fogMask.remove();
+        bgFogMask.remove();
     }
+
+    // 인라인 스타일을 지울 때 빈 style 속성까지 없애서 처음 상태로 되돌림
+    const clearOpacity = (element) => {
+        element.style.removeProperty("opacity");
+        if (element.getAttribute("style") === "") element.removeAttribute("style");
+    };
 
     const terminals = new Set();
     for (const { services, loop } of Object.values(lines)) {
@@ -892,14 +902,15 @@ function setupMap(svg) {
     const setLabelDim = (label, dim) => {
         if (label.dimmed === dim) return;
         label.dimmed = dim;
-        label.element.style.opacity = dim ? dimStrength : "";
+        if (dim) label.element.style.opacity = dimStrength;
+        else clearOpacity(label.element);
     };
 
     highlightRoute = (path) => {
         if (path === null) {
             hideFog();
             for (const label of labels) setLabelDim(label, false);
-            legend.style.opacity = "";
+            clearOpacity(legend);
             return;
         }
 
