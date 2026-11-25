@@ -1,21 +1,13 @@
 @font-face {
   font-family: 'HWKT';
   src: url(../fonts/HanWangKanTan.ttf) format('truetype');
+  font-weight: 700;
 }
 
-.hy-icon {
-    text-align: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 25%;
-    line-height: 1.5rem;
-    margin: 0.25rem;
-    outline: 2px solid;
-    outline-offset: -2px;
-    color: #000000;
-}
-
-.sq-icon {
+.hy-icon,
+.sq-icon,
+.sl-icon,
+.mt-icon {
     text-align: center;
     width: 1.5rem;
     height: 1.5rem;
@@ -25,21 +17,15 @@
     color: #ffffff;
 }
 
+.hy-icon,
 .sl-icon,
 .mt-icon {
-    text-align: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 50%;
-    line-height: 1.5rem;
-    margin: 0.25rem;
     outline: 2px solid;
     outline-offset: -2px;
-    font-family: 'HWKT';
-    font-weight: 400;
+    color: #000000;
 }
 
-.mt-icon {
-    color: #000000;
-    background-color: #F3BA4B;
-}
+.sl-icon,
+.mt-icon { font-family: 'HWKT'; }
+.hy-icon { border-radius: 25%; }
+.mt-icon { background-color: #F3BA4B; }
