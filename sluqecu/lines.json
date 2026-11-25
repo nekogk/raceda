@@ -1,6 +1,6 @@
 {
     "HY10": {
-        "st": "延中鉄道", "en": "Yezzori Line", "color": "#9982B8",
+        "st": "延中線", "en": "Yezzori Line", "color": "#9982B8",
         "icon": ["hy-icon", "outline", "10"],
         "services": {
             "local": [
@@ -55,7 +55,7 @@
         "dwells": { "local": 1, "express": 1.2, "limited": 1.5 }
     },
     "HY11": {
-        "st": "昨雨鉄道", "en": "Zajiwa Line", "color": "#B44547", 
+        "st": "昨雨線", "en": "Zajiwa Line", "color": "#B44547", 
         "icon": ["hy-icon", "outline", "11"],
         "services": {
             "local": [
@@ -85,7 +85,7 @@
         "dwells": { "local": 1 }
     },
     "HY12": {
-        "st": "小円鉄道", "en": "Shamojesa Line", "color": "#51Af84", "loop": 29.2, 
+        "st": "环状線", "en": "Gheza Line", "color": "#51Af84", "loop": 29.2, 
         "icon": ["hy-icon", "outline", "12"],
         "services": {
             "local": [
@@ -119,7 +119,7 @@
         "dwells": { "local": 1 }
     },
     "HY13": {
-        "st": "背山鉄道", "en": "Bicer Line", "color": "#7EAD96", 
+        "st": "背山線", "en": "Bicer Line", "color": "#7EAD96", 
         "icon": ["hy-icon", "outline", "13"],
         "services": {
             "local": [
@@ -158,7 +158,7 @@
         "dwells": { "local": 1, "branch": 1 }
     },
     "HY14": {
-        "st": "郊外鉄道", "en": "Kone Line", "color": "#8B8C89", 
+        "st": "郊外線", "en": "Kone Line", "color": "#8B8C89", 
         "icon": ["hy-icon", "outline", "14"],
         "services": {
             "local": [
@@ -199,7 +199,7 @@
         "dwells": { "local": 1, "branch": 1 }
     },
     "HY15": {
-        "st": "北部支線鉄道", "en": "Pijibichece Line", "color": "#E7C48B", 
+        "st": "北部支線", "en": "Pijibiche Line", "color": "#E7C48B", 
         "icon": ["hy-icon", "outline", "15"],
         "services": {
             "local": [
@@ -219,7 +219,7 @@
         "dwells": { "local": 1 }
     },
     "HY20": {
-        "st": "京海鉄道", "en": "Zshaseme Line", "color": "#71C6CA",
+        "st": "京海線", "en": "Zshaseme Line", "color": "#71C6CA",
         "icon": ["hy-icon", "outline", "20"],
         "services": {
             "local": [
@@ -280,7 +280,7 @@
         "dwells": { "local": 1, "express": 1.2, "limited": 1.5 }
     },
     "HY21": {
-        "st": "南港鉄道", "en": "Creresesha Line", "color": "#A2CBEC", 
+        "st": "南港線", "en": "Creresesha Line", "color": "#A2CBEC", 
         "icon": ["hy-icon", "outline", "21"],
         "services": {
             "local": [
@@ -317,7 +317,7 @@
         "dwells": { "local": 1, "branch": 1 }
     },
     "HY22": {
-        "st": "地行鉄道", "en": "Lega Line", "color": "#D96219", 
+        "st": "地行線", "en": "Lega Line", "color": "#D96219", 
         "icon": ["hy-icon", "outline", "22"],
         "services": {
             "local": [
@@ -375,7 +375,7 @@
         "dwells": { "local": 1, "branch": 1, "express": 1.2 }
     },
     "HY23": {
-        "st": "大円鉄道", "en": "Tobajesa Line", "color": "#91CDAD", 
+        "st": "一行糖線", "en": "Xijigaza Line", "color": "#91CDAD", 
         "icon": ["hy-icon", "outline", "23"],
         "services": {
             "local": [
@@ -408,7 +408,7 @@
         "dwells": { "local": 1 }
     },
     "HY24": {
-        "st": "南埼鉄道", "en": "Crereschi Line", "color": "#C34154", 
+        "st": "南埼線", "en": "Crereschi Line", "color": "#C34154", 
         "icon": ["hy-icon", "outline", "24"],
         "services": {
             "local": [
@@ -429,7 +429,7 @@
         "dwells": { "local": 1 }
     },
     "SQ1": {
-        "st": "大脉鉄道", "en": "Tobarye Line", "color": "#376440", 
+        "st": "大脉線", "en": "Tobarye Line", "color": "#376440", 
         "icon": ["sq-icon", "background", "1"],
         "services": {
             "local": [
@@ -507,7 +507,7 @@
         "dwells": { "local": 0.8, "express": 1, "limited": 1.2 }
     },
     "SQ2": {
-        "st": "京心鉄道", "en": "Zshashizu Line", "color": "#CA2A28", 
+        "st": "京心線", "en": "Zshashizu Line", "color": "#CA2A28", 
         "icon": ["sq-icon", "background", "2"],
         "services": {
             "local": [
@@ -580,7 +580,7 @@
         "dwells": { "local": 0.8, "express": 1, "limited": 1.2 }
     },
     "SQ3": {
-        "st": "三元鉄道", "en": "Lesayu Line", "color": "#F3BA4B", "loop": 57.3, 
+        "st": "三元線", "en": "Lesayu Line", "color": "#F3BA4B", "loop": 57.3, 
         "icon": ["sq-icon", "background", "3"], 
         "services": {
             "local": [
@@ -655,7 +655,7 @@
         "dwells": { "local": 0.8, "express": 1 }
     },
     "SQ4": {
-        "st": "空港鉄道", "en": "Hoker Line", "color": "#309AD6", 
+        "st": "空港線", "en": "Hoker Line", "color": "#309AD6", 
         "icon": ["sq-icon", "background", "4"],
         "services": {
             "local": [
@@ -727,7 +727,7 @@
         "dwells": { "local": 0.8, "express": 1, "limited": 1.2 }
     },
     "SQ5": {
-        "st": "江浦鉄道", "en": "Bigosefu Line", "color": "#EF8AA4", 
+        "st": "江浦線", "en": "Bigosefu Line", "color": "#EF8AA4", 
         "icon": ["sq-icon", "background", "5"],
         "services": {
             "local": [
@@ -798,7 +798,7 @@
         "dwells": { "local": 0.8, "express": 1, "branch": 0.8 }
     },
     "SQ6": {
-        "st": "南北鉄道", "en": "Crererube Line", "color": "#A1C158", 
+        "st": "南北線", "en": "Crererube Line", "color": "#A1C158", 
         "icon": ["sq-icon", "background", "6"],
         "services": {
             "local": [
@@ -853,7 +853,7 @@
         "dwells": { "local": 0.8, "express": 1 }
     },
     "SQ7": {
-        "st": "㒱家鉄道", "en": "Rushimis Line", "color": "#EC7C14", 
+        "st": "㒱家線", "en": "Rushimis Line", "color": "#EC7C14", 
         "icon": ["sq-icon", "background", "7"],
         "services": {
             "local": [
@@ -906,7 +906,7 @@
         "dwells": { "local": 0.8 }
     },
     "SQ8": {
-        "st": "近隣街鉄道", "en": "Jiriqe Line", "color": "#D69D5D", 
+        "st": "近隣街線", "en": "Jiriqe Line", "color": "#D69D5D", 
         "icon": ["sq-icon", "background", "8"],
         "services": {
             "local": [
@@ -973,7 +973,7 @@
         "dwells": { "local": 0.8, "express": 1, "branch": 0.8 }
     },
     "SQ9": {
-        "st": "東西鉄道", "en": "Xigoshabus Line", "color": "#004789", 
+        "st": "東西線", "en": "Xigoshabus Line", "color": "#004789", 
         "icon": ["sq-icon", "background", "9"],
         "services": {
             "local": [
@@ -1024,7 +1024,7 @@
         "dwells": { "local": 0.8 }
     },
     "SQ10": {
-        "st": "延浦鉄道", "en": "Cezsefu Line", "color": "#60499B", 
+        "st": "延浦線", "en": "Cezsefu Line", "color": "#60499B", 
         "icon": ["sq-icon", "background", "10"],
         "services": {
             "local": [
@@ -1067,7 +1067,7 @@
         "dwells": { "local": 0.8 }
     },
     "SQ11": {
-        "st": "江南鉄道", "en": "Bigocrere Line", "color": "#48B892", 
+        "st": "江南線", "en": "Bigocrere Line", "color": "#48B892", 
         "icon": ["sq-icon", "background", "11"],
         "services": {
             "local": [
@@ -1122,7 +1122,7 @@
         "dwells": { "local": 0.8, "branch": 0.8 }
     },
     "SQ12": {
-        "st": "江北鉄道", "en": "Bigorube Line", "color": "#6C1B1A", 
+        "st": "江北線", "en": "Bigorube Line", "color": "#6C1B1A", 
         "icon": ["sq-icon", "background", "12"],
         "services": {
             "local": [
@@ -1155,7 +1155,7 @@
         "dwells": { "local": 0.8 }
     },
     "HR": {
-        "st": "初地鉄道", "en": "Hatarechetu Line", "color": "#A1AE89",
+        "st": "初地線", "en": "Hatarechetu Line", "color": "#A1AE89",
         "icon": ["sl-icon", "text", "初"],
         "services": {
             "local": [
@@ -1201,7 +1201,7 @@
         "dwells": { "local": 0.5 }
     },
     "NJ": {
-        "st": "美琴鉄道", "en": "Nijere Line", "color": "#EB9D5F",
+        "st": "美琴線", "en": "Nijere Line", "color": "#EB9D5F",
         "icon": ["sl-icon", "text", "美"],
         "services": {
             "local": [
@@ -1241,7 +1241,7 @@
         "dwells": { "local": 0.5 }
     },
     "PM": {
-        "st": "上栄鉄道", "en": "Pesamu Line", "color": "#7D5439",
+        "st": "上栄線", "en": "Pesamu Line", "color": "#7D5439",
         "icon": ["sl-icon", "text", "上"],
         "services": {
             "local": [
@@ -1275,7 +1275,7 @@
         "dwells": { "local": 0.5 }
     },
     "LN": {
-        "st": "延南鉄道", "en": "Lano Line", "color": "#B891BD",
+        "st": "延南線", "en": "Lano Line", "color": "#B891BD",
         "icon": ["sl-icon", "text", "延"],
         "services": {
             "local": [
@@ -1313,7 +1313,7 @@
         "dwells": { "local": 0.5 }
     },
     "ZB": {
-        "st": "惪氷鉄道", "en": "Zshibise Line", "color": "#921D22",
+        "st": "惪氷線", "en": "Zshibise Line", "color": "#921D22",
         "icon": ["sl-icon", "text", "德"],
         "services": {
             "local": [
@@ -1348,7 +1348,7 @@
         "dwells": { "local": 0.5 }
     },
     "RS": {
-        "st": "満港鉄道", "en": "Remasesha Line", "color": "#5E6A37",
+        "st": "満港線", "en": "Remasesha Line", "color": "#5E6A37",
         "icon": ["sl-icon", "text", "滿"],
         "services": {
             "local": [
@@ -1375,7 +1375,7 @@
         "dwells": { "local": 0.5 }
     },
     "SS": {
-        "st": "計海鉄道", "en": "Sachiseme Line", "color": "#E61E69",
+        "st": "計海線", "en": "Sachiseme Line", "color": "#E61E69",
         "icon": ["sl-icon", "text", "計"],
         "services": {
             "local": [
@@ -1404,7 +1404,7 @@
         "dwells": { "local": 0.5 }
     },
     "WC": {
-        "st": "秋疑鉄道", "en": "Whohercache Line", "color": "#3F5874",
+        "st": "秋疑線", "en": "Whohercache Line", "color": "#3F5874",
         "icon": ["sl-icon", "text", "秋"],
         "services": {
             "local": [
@@ -1428,7 +1428,7 @@
         "dwells": { "local": 0.5 }
     },
     "BE": {
-        "st": "幼訪鉄道", "en": "Baxyaeru Line", "color": "#231815",
+        "st": "幼訪線", "en": "Baxyaeru Line", "color": "#231815",
         "icon": ["sl-icon", "text", "幼"],
         "services": {
             "local": [
@@ -1453,7 +1453,7 @@
         "dwells": { "local": 0.5 }
     },
     "SC": {
-        "st": "済席鉄道", "en": "Sechicaspe Line", "color": "#E3C9B0",
+        "st": "済席線", "en": "Sechicaspe Line", "color": "#E3C9B0",
         "icon": ["sl-icon", "text", "濟"],
         "services": {
             "local": [
@@ -1482,7 +1482,7 @@
         "dwells": { "local": 0.5 }
     },
     "RJ": {
-        "st": "安水鉄道", "en": "Rexajerche Line", "color": "#EBA995",
+        "st": "安水線", "en": "Rexajerche Line", "color": "#EBA995",
         "icon": ["sl-icon", "text", "安"],
         "services": {
             "local": [
@@ -1549,7 +1549,7 @@
         "dwells": { "local": 0.5 }
     },
     "WS": {
-        "st": "掃星田鉄道", "en": "Whishes Line", "color": "#6971B4",
+        "st": "掃星田線", "en": "Whishes Line", "color": "#6971B4",
         "icon": ["sl-icon", "text", "彗"],
         "services": {
             "local": [
@@ -1571,7 +1571,7 @@
         "dwells": { "local": 0.5 }
     },
     "RK": {
-        "st": "㒲口鉄道", "en": "Rurikaxi Line", "color": "#D69D5D",
+        "st": "㒲口線", "en": "Rurikaxi Line", "color": "#D69D5D",
         "icon": ["sl-icon", "text", "暮"],
         "services": {
             "local": [
@@ -1592,7 +1592,7 @@
         "dwells": { "local": 0.5 }
     },
     "SM": {
-        "st": "一滞鉄道", "en": "Smijiseda Line", "color": "#67944D",
+        "st": "一滞線", "en": "Smijiseda Line", "color": "#67944D",
         "icon": ["sl-icon", "text", "一"],
         "services": {
             "local": [
@@ -1617,7 +1617,7 @@
         "dwells": { "local": 0.5 }
     },
     "WZ": {
-        "st": "日光鉄道", "en": "Wezwhori Line", "color": "#951D57",
+        "st": "日光線", "en": "Wezwhori Line", "color": "#951D57",
         "icon": ["sl-icon", "text", "日"],
         "services": {
             "local": [
@@ -1642,7 +1642,7 @@
         "dwells": { "local": 0.5 }
     },
     "BP": {
-        "st": "真内鉄道", "en": "Bipejoda Line", "color": "#A5D4D6",
+        "st": "真内線", "en": "Bipejoda Line", "color": "#A5D4D6",
         "icon": ["sl-icon", "text", "真"],
         "services": {
             "local": [
@@ -1665,7 +1665,7 @@
         "dwells": { "local": 0.5 }
     },
     "HT": {
-        "st": "行勉鉄道", "en": "Haretome Line", "color": "#A2CBEC",
+        "st": "行勉線", "en": "Haretome Line", "color": "#A2CBEC",
         "icon": ["sl-icon", "text", "行"],
         "services": {
             "local": [
@@ -1687,7 +1687,7 @@
         "dwells": { "local": 0.5 }
     },
     "WP": {
-        "st": "烞解鉄道", "en": "Whopuwhili Line", "color": "#C6C8A1",
+        "st": "烞解線", "en": "Whopuwhili Line", "color": "#C6C8A1",
         "icon": ["sl-icon", "text", "爆"],
         "services": {
             "local": [
@@ -1710,7 +1710,7 @@
         "dwells": { "local": 0.5 }
     },
     "YW": {
-        "st": "雪式鉄道", "en": "Yuwhigo Line", "color": "#0E70AB",
+        "st": "雪式線", "en": "Yuwhigo Line", "color": "#0E70AB",
         "icon": ["sl-icon", "text", "雪"],
         "services": {
             "local": [
@@ -1738,7 +1738,7 @@
         "dwells": { "local": 0.5 }
     },
     "HN": {
-        "st": "瀬升鉄道", "en": "Hanyaris Line", "color": "#B67D35",
+        "st": "瀬升線", "en": "Hanyaris Line", "color": "#B67D35",
         "icon": ["sl-icon", "text", "瀨"],
         "services": {
             "local": [
@@ -1767,7 +1767,7 @@
         "dwells": { "local": 0.5, "branch": 0.5 }
     },
     "JS": {
-        "st": "円難鉄道", "en": "Jesajig Line", "color": "#98607D",
+        "st": "円難線", "en": "Jesajig Line", "color": "#98607D",
         "icon": ["sl-icon", "text", "圓"],
         "services": {
             "local": [
@@ -1792,7 +1792,7 @@
         "dwells": { "local": 0.5 }
     },
     "RB": {
-        "st": "北浦鉄道", "en": "Rubesefu Line", "color": "#82A29A",
+        "st": "北浦線", "en": "Rubesefu Line", "color": "#82A29A",
         "icon": ["sl-icon", "text", "北"],
         "services": {
             "local": [
@@ -1815,7 +1815,7 @@
         "dwells": { "local": 0.5 }
     },
     "AR": {
-        "st": "耶楼井鉄道", "en": "Aroce Line", "color": "#E6807D",
+        "st": "耶楼井線", "en": "Aroce Line", "color": "#E6807D",
         "icon": ["sl-icon", "text", "耶"],
         "services": {
             "local": [
@@ -1836,7 +1836,7 @@
         "dwells": { "local": 0.5 }
     },
     "MW": {
-        "st": "蜜火鉄道", "en": "Miquwhona Line", "color": "#EDB85F",
+        "st": "蜜火線", "en": "Miquwhona Line", "color": "#EDB85F",
         "icon": ["sl-icon", "text", "蜜"],
         "services": {
             "local": [
@@ -1862,7 +1862,7 @@
         "dwells": { "local": 0.5 }
     },
     "RM": {
-        "st": "満重鉄道", "en": "Remaxili Line", "color": "#D86A5A",
+        "st": "満重線", "en": "Remaxili Line", "color": "#D86A5A",
         "icon": ["sl-icon", "text", "重"],
         "services": {
             "local": [
