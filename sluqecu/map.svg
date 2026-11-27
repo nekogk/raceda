@@ -853,7 +853,7 @@
     <rect class="cls-57" x="432.27" y="1864.99" width="22" height="12" rx="6" ry="6" transform="translate(994.88 29.03) rotate(30)"/>
     <rect class="cls-57" x="386.77" y="1838.72" width="22" height="12" rx="6" ry="6" transform="translate(975.65 48.26) rotate(30)"/>
     <rect class="cls-57" x="318.55" y="1957.73" width="22" height="12" rx="6" ry="6"/>
-    <rect class="cls-57" x="338.48" y="2038.07" width="22" height="12" rx="6" ry="6" transform="translate(2294.4402 2763.4448) rotate(120)"/>
+    <rect class="cls-57" x="338.48" y="2038.07" width="22" height="12" rx="6" ry="6" transform="translate(-1595.4754 1324.6955) rotate(-60)"/>
     <rect class="cls-57" x="1017.72" y="2041.7" width="22" height="12" rx="6" ry="6" transform="translate(895.7714 4335.4296) rotate(-150)"/>
     <rect class="cls-57" x="947.36" y="1995.45" width="22" height="12" rx="6" ry="6" transform="translate(-1254.1254 1830.6842) rotate(-60)"/>
     <rect class="cls-57" x="848.56" y="1938.41" width="22" height="12" rx="6" ry="6" transform="translate(-1254.1254 1716.6061) rotate(-60)"/>
@@ -1343,8 +1343,8 @@
     <circle class="cls-156" cx="393.55" cy="1842.28" r="3"/>
     <circle class="cls-160" cx="334.44" cy="1963.73" r="3"/>
     <circle class="cls-189" cx="324.67" cy="1963.73" r="3"/>
-    <circle class="cls-160" cx="347.04" cy="2048.31" r="3"/>
-    <circle class="cls-189" cx="351.92" cy="2039.85" r="3"/>
+    <circle class="cls-160" cx="351.93" cy="2039.83" r="3"/>
+    <circle class="cls-189" cx="347.04" cy="2048.29" r="3"/>
     <circle class="cls-146" cx="1024.49" cy="2045.26" r="3"/>
     <circle class="cls-148" cx="1032.95" cy="2050.14" r="3"/>
     <circle class="cls-183" cx="960.8" cy="1997.21" r="3"/>
